@@ -1,0 +1,1013 @@
+import React, { useMemo, useRef, useEffect, useState } from 'react';
+import { useAppContext } from '@/contexts/AppContext';
+import AIInsightBanner from './AIInsightBanner';
+import {
+  Send, Search, Image, Paperclip, Smile, Phone, Video, MoreVertical,
+  Users, Globe, User, ArrowLeft, Hash
+} from 'lucide-react';
+
+import { api } from '@/lib/api';
+import { connectSocket } from '@/lib/socket';
+
+type ChatMedia = { url: string; publicId?: string; resourceType?: string } | null;
+
+type ChatMessage = {
+  _id: string;
+  from: any;
+  to?: any;
+  text: string;
+  media?: ChatMedia;
+  createdAt: string;
+};
+
+type DirectoryUser = {
+  _id: string;
+  name: string;
+  membershipId?: string;
+  profilePicture?: string;
+  role?: string;
+  status?: string;
+};
+
+type ConversationItem = {
+  type: 'private';
+  otherUser: {
+    _id: string;
+    name: string;
+    membershipId?: string;
+    profilePicture?: string;
+    role?: string;
+    status?: string;
+  };
+  lastMessage?: {
+    _id: string;
+    text: string;
+    createdAt: string;
+    media?: ChatMedia;
+  };
+};
+
+function inferMediaType(media?: ChatMedia): 'image' | 'video' | 'audio' | 'file' | null {
+  if (!media?.url) return null;
+
+  const rt = String(media.resourceType || '').toLowerCase();
+  if (rt === 'image' || rt === 'video' || rt === 'audio') return rt as any;
+
+  const url = media.url.toLowerCase();
+  if (/(\.png|\.jpg|\.jpeg|\.gif|\.webp|\.bmp|\.svg)(\?|#|$)/.test(url)) return 'image';
+  if (/(\.mp4|\.webm|\.mov|\.m4v|\.mkv)(\?|#|$)/.test(url)) return 'video';
+  if (/(\.mp3|\.wav|\.m4a|\.aac|\.ogg)(\?|#|$)/.test(url)) return 'audio';
+  return 'file';
+}
+
+function renderMediaPreview(media: ChatMedia, isOwn: boolean) {
+  const type = inferMediaType(media);
+  if (!type || !media?.url) return null;
+
+  const linkClass = `text-xs underline ${isOwn ? 'text-white' : 'text-blue-600'}`;
+
+  if (type === 'image') {
+    return (
+      <a href={media.url} target="_blank" rel="noreferrer" className="block mt-2">
+        <img
+          src={media.url}
+          alt="Attachment"
+          className="w-40 h-40 object-cover rounded-xl border border-white/10"
+          loading="lazy"
+        />
+      </a>
+    );
+  }
+
+  if (type === 'video') {
+    return (
+      <div className="mt-2">
+        <video src={media.url} controls className="w-56 rounded-xl" />
+      </div>
+    );
+  }
+
+  if (type === 'audio') {
+    return (
+      <div className="mt-2">
+        <audio src={media.url} controls className="w-56" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-2">
+      <a href={media.url} target="_blank" rel="noreferrer" className={linkClass}>
+        View attachment
+      </a>
+    </div>
+  );
+}
+
+const MessagesPage: React.FC = () => {
+  const { user, isAuthenticated, setShowLoginModal, dmTargetUserId, setDmTargetUserId } = useAppContext();
+  const [messageInput, setMessageInput] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [userSearch, setUserSearch] = useState('');
+  const [searchingUsers, setSearchingUsers] = useState(false);
+  const [userResults, setUserResults] = useState<DirectoryUser[]>([]);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const [showMobileChat, setShowMobileChat] = useState(false);
+
+  const [conversations, setConversations] = useState<ConversationItem[]>([]);
+  const [activeUserId, setActiveUserId] = useState<string | null>(null);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [loadingConversations, setLoadingConversations] = useState(false);
+  const [loadingMessages, setLoadingMessages] = useState(false);
+  const [error, setError] = useState('');
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const [callOpen, setCallOpen] = useState(false);
+  const [callIncoming, setCallIncoming] = useState(false);
+  const [callKind, setCallKind] = useState<'audio' | 'video'>('audio');
+  const [callId, setCallId] = useState<string | null>(null);
+  const [callOther, setCallOther] = useState<{ _id: string; name: string } | null>(null);
+  const [callMuted, setCallMuted] = useState(false);
+  const [callCamOff, setCallCamOff] = useState(false);
+  const [callStatus, setCallStatus] = useState<'calling' | 'ringing' | 'connecting' | 'connected' | 'ended'>('calling');
+
+  const pcRef = useRef<RTCPeerConnection | null>(null);
+  const localStreamRef = useRef<MediaStream | null>(null);
+  const remoteStreamRef = useRef<MediaStream | null>(null);
+  const localVideoRef = useRef<HTMLVideoElement>(null);
+  const remoteVideoRef = useRef<HTMLVideoElement>(null);
+
+  const callSocketRef = useRef<ReturnType<typeof connectSocket> | null>(null);
+
+  const toneRef = useRef<{ ctx: AudioContext; osc: OscillatorNode; gain: GainNode; timer: any } | null>(null);
+
+  const iceServers = useMemo(
+    () => ({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] }),
+    []
+  );
+
+  const cleanupCall = () => {
+    if (toneRef.current) {
+      const t = toneRef.current;
+      toneRef.current = null;
+      try {
+        clearInterval(t.timer);
+      } catch {
+        // ignore
+      }
+      try {
+        t.osc.stop();
+      } catch {
+        // ignore
+      }
+      try {
+        t.ctx.close();
+      } catch {
+        // ignore
+      }
+    }
+
+    try {
+      pcRef.current?.close();
+    } catch {
+      // ignore
+    }
+    pcRef.current = null;
+
+    for (const s of [localStreamRef.current, remoteStreamRef.current]) {
+      if (s) {
+        for (const t of s.getTracks()) {
+          try {
+            t.stop();
+          } catch {
+            // ignore
+          }
+        }
+      }
+    }
+    localStreamRef.current = null;
+    remoteStreamRef.current = null;
+
+    if (localVideoRef.current) localVideoRef.current.srcObject = null;
+    if (remoteVideoRef.current) remoteVideoRef.current.srcObject = null;
+
+    setCallOpen(false);
+    setCallIncoming(false);
+    setCallId(null);
+    setCallOther(null);
+    setCallMuted(false);
+    setCallCamOff(false);
+    setCallStatus('ended');
+  };
+
+  const startTone = (mode: 'ring' | 'ringback') => {
+    if (toneRef.current) return;
+    const Ctx = (window.AudioContext || (window as any).webkitAudioContext) as typeof AudioContext;
+    if (!Ctx) return;
+
+    const ctx = new Ctx();
+    try {
+      void ctx.resume();
+    } catch {
+      // ignore
+    }
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.value = mode === 'ring' ? 880 : 440;
+    gain.gain.value = 0;
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start();
+
+    let on = false;
+    const timer = setInterval(() => {
+      on = !on;
+      gain.gain.value = on ? 0.06 : 0;
+      osc.frequency.value = mode === 'ring' ? (on ? 880 : 660) : (on ? 440 : 480);
+    }, mode === 'ring' ? 400 : 500);
+
+    toneRef.current = { ctx, osc, gain, timer };
+  };
+
+  const stopTone = () => {
+    if (!toneRef.current) return;
+    const t = toneRef.current;
+    toneRef.current = null;
+    try {
+      clearInterval(t.timer);
+    } catch {
+      // ignore
+    }
+    try {
+      t.osc.stop();
+    } catch {
+      // ignore
+    }
+    try {
+      t.ctx.close();
+    } catch {
+      // ignore
+    }
+  };
+
+  const ensurePc = (sock: any, id: string) => {
+    if (pcRef.current) return pcRef.current;
+    const pc = new RTCPeerConnection(iceServers);
+    pcRef.current = pc;
+
+    setCallStatus('connecting');
+
+    pc.onconnectionstatechange = () => {
+      const st = pc.connectionState;
+      if (st === 'connected') {
+        setCallStatus('connected');
+        stopTone();
+      } else if (st === 'connecting' || st === 'new') {
+        setCallStatus('connecting');
+      } else if (st === 'failed' || st === 'disconnected') {
+        setCallStatus('ended');
+      }
+    };
+
+    pc.oniceconnectionstatechange = () => {
+      const st = pc.iceConnectionState;
+      if (st === 'connected' || st === 'completed') {
+        setCallStatus('connected');
+        stopTone();
+      } else if (st === 'checking') {
+        setCallStatus('connecting');
+      } else if (st === 'failed' || st === 'disconnected') {
+        setCallStatus('ended');
+      }
+    };
+
+    const remote = new MediaStream();
+    remoteStreamRef.current = remote;
+    if (remoteVideoRef.current) remoteVideoRef.current.srcObject = remote;
+
+    pc.ontrack = (ev) => {
+      for (const track of ev.streams?.[0]?.getTracks?.() || []) {
+        if (!remote.getTracks().some((t) => t.id === track.id)) remote.addTrack(track);
+      }
+      for (const track of ev.track ? [ev.track] : []) {
+        if (!remote.getTracks().some((t) => t.id === track.id)) remote.addTrack(track);
+      }
+    };
+
+    pc.onicecandidate = (ev) => {
+      if (!ev.candidate) return;
+      sock.emit('call:ice', { callId: id, candidate: ev.candidate.toJSON ? ev.candidate.toJSON() : ev.candidate });
+    };
+
+    return pc;
+  };
+
+  const startLocalMedia = async (kind: 'audio' | 'video') => {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: true,
+      video: kind === 'video',
+    });
+    localStreamRef.current = stream;
+    if (localVideoRef.current) localVideoRef.current.srcObject = stream;
+    return stream;
+  };
+
+  const toggleMute = () => {
+    const next = !callMuted;
+    setCallMuted(next);
+    const s = localStreamRef.current;
+    if (!s) return;
+    for (const t of s.getAudioTracks()) t.enabled = !next;
+  };
+
+  const toggleCam = () => {
+    const next = !callCamOff;
+    setCallCamOff(next);
+    const s = localStreamRef.current;
+    if (!s) return;
+    for (const t of s.getVideoTracks()) t.enabled = !next;
+  };
+
+  const hangup = () => {
+    const s = callSocketRef.current;
+    if (s && callId) {
+      s.emit('call:hangup', { callId });
+    }
+    cleanupCall();
+  };
+
+  const placeCall = async (kind: 'audio' | 'video') => {
+    if (!activeConversation?.otherUser?._id) return;
+    const otherId = String(activeConversation.otherUser._id);
+    const otherName = String(activeConversation.otherUser.name || 'Member');
+
+    const sock = connectSocket();
+    callSocketRef.current = sock;
+
+    const id = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    setCallKind(kind);
+    setCallId(id);
+    setCallOther({ _id: otherId, name: otherName });
+    setCallIncoming(false);
+    setCallOpen(true);
+    setCallStatus('calling');
+    startTone('ringback');
+
+    await startLocalMedia(kind);
+    const pc = ensurePc(sock, id);
+    for (const track of localStreamRef.current?.getTracks() || []) {
+      pc.addTrack(track, localStreamRef.current as MediaStream);
+    }
+
+    sock.emit('call:invite', { toUserId: otherId, callId: id, kind });
+  };
+
+  const acceptIncoming = async () => {
+    if (!callId) return;
+    const sock = connectSocket();
+    callSocketRef.current = sock;
+    setCallIncoming(false);
+    setCallOpen(true);
+    setCallStatus('connecting');
+    stopTone();
+
+    await startLocalMedia(callKind);
+    const pc = ensurePc(sock, callId);
+    for (const track of localStreamRef.current?.getTracks() || []) {
+      pc.addTrack(track, localStreamRef.current as MediaStream);
+    }
+
+    sock.emit('call:accept', { callId });
+  };
+
+  const rejectIncoming = () => {
+    const sock = connectSocket();
+    if (callId) sock.emit('call:reject', { callId });
+    cleanupCall();
+  };
+
+  const filteredConversations = useMemo(() => {
+    return conversations.filter((c) => {
+      const name = c?.otherUser?.name || '';
+      return name.toLowerCase().includes(searchQuery.toLowerCase());
+    });
+  }, [conversations, searchQuery]);
+
+  const activeConversation = useMemo(() => {
+    if (!activeUserId) return null;
+    return conversations.find((c) => String(c.otherUser._id) === String(activeUserId)) || null;
+  }, [activeUserId, conversations]);
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [activeUserId, messages.length]);
+
+  useEffect(() => {
+    if (!isAuthenticated) return;
+
+    let alive = true;
+    setLoadingConversations(true);
+    setError('');
+
+    api
+      .authedRequest<{ ok: true; items: ConversationItem[] }>('/api/messages/conversations?limit=50', 'GET')
+      .then((res) => {
+        if (!alive) return;
+        setConversations(res.items || []);
+      })
+      .catch((e: any) => {
+        if (!alive) return;
+        setError(e?.message || 'Failed to load conversations');
+      })
+      .finally(() => {
+        if (!alive) return;
+        setLoadingConversations(false);
+      });
+
+    return () => {
+      alive = false;
+    };
+  }, [isAuthenticated]);
+
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    if (!dmTargetUserId) return;
+    setActiveUserId(dmTargetUserId);
+    setShowMobileChat(true);
+  }, [dmTargetUserId, isAuthenticated]);
+
+  useEffect(() => {
+    if (!isAuthenticated) return;
+
+    const s = connectSocket();
+    callSocketRef.current = s;
+
+    const onNew = (msg: ChatMessage) => {
+      const fromId = String(msg?.from?._id || msg?.from);
+      const toId = String(msg?.to?._id || msg?.to);
+      const me = String(user?.id);
+
+      const other = fromId === me ? toId : fromId;
+      if (!other) return;
+
+      setConversations((prev) => {
+        const idx = prev.findIndex((c) => String(c.otherUser._id) === String(other));
+        const updated: ConversationItem = idx >= 0 ? prev[idx] : ({
+          type: 'private',
+          otherUser: { _id: other, name: 'Member' },
+        } as any);
+
+        const nextItem: ConversationItem = {
+          ...updated,
+          lastMessage: {
+            _id: msg._id,
+            text: msg.text,
+            createdAt: msg.createdAt,
+            media: msg.media,
+          },
+        };
+
+        const rest = prev.filter((_, i) => i !== idx);
+        return [nextItem, ...rest];
+      });
+
+      if (String(activeUserId) === String(other)) {
+        setMessages((prev) => [...prev, msg]);
+      }
+    };
+
+    s.on('private:new', onNew);
+
+    const onIncoming = (payload: any) => {
+      const me = String(user?.id);
+      const fromId = String(payload?.from?._id || '');
+      if (!fromId || fromId === me) return;
+
+      setCallId(String(payload.callId));
+      setCallKind(payload.kind === 'video' ? 'video' : 'audio');
+      setCallOther({ _id: fromId, name: String(payload?.from?.name || 'Member') });
+      setCallIncoming(true);
+      setCallOpen(true);
+      setCallStatus('ringing');
+      startTone('ring');
+    };
+
+    const onAccepted = async (payload: any) => {
+      const id = String(payload?.callId || '');
+      if (!id || id !== callId) return;
+      const sock = callSocketRef.current;
+      if (!sock) return;
+      const pc = pcRef.current;
+      if (!pc) return;
+
+      setCallStatus('connecting');
+      stopTone();
+
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+      sock.emit('call:offer', { callId: id, sdp: offer });
+    };
+
+    const onRejected = (payload: any) => {
+      const id = String(payload?.callId || '');
+      if (!id || id !== callId) return;
+      cleanupCall();
+    };
+
+    const onOffer = async (payload: any) => {
+      const id = String(payload?.callId || '');
+      if (!id) return;
+      if (!callId || String(callId) !== id) return;
+      const sock = callSocketRef.current;
+      if (!sock) return;
+
+      const pc = ensurePc(sock, id);
+      await pc.setRemoteDescription(new RTCSessionDescription(payload.sdp));
+      const ans = await pc.createAnswer();
+      await pc.setLocalDescription(ans);
+      sock.emit('call:answer', { callId: id, sdp: ans });
+    };
+
+    const onAnswer = async (payload: any) => {
+      const id = String(payload?.callId || '');
+      if (!id || id !== callId) return;
+      const pc = pcRef.current;
+      if (!pc) return;
+      if (pc.currentRemoteDescription) return;
+      await pc.setRemoteDescription(new RTCSessionDescription(payload.sdp));
+    };
+
+    const onIce = async (payload: any) => {
+      const id = String(payload?.callId || '');
+      if (!id || id !== callId) return;
+      const pc = pcRef.current;
+      if (!pc) return;
+      try {
+        await pc.addIceCandidate(new RTCIceCandidate(payload.candidate));
+      } catch {
+        // ignore
+      }
+    };
+
+    const onHangup = (payload: any) => {
+      const id = String(payload?.callId || '');
+      if (!id || id !== callId) return;
+      cleanupCall();
+    };
+
+    s.on('call:incoming', onIncoming);
+    s.on('call:accepted', onAccepted);
+    s.on('call:rejected', onRejected);
+    s.on('call:offer', onOffer);
+    s.on('call:answer', onAnswer);
+    s.on('call:ice', onIce);
+    s.on('call:hangup', onHangup);
+
+    return () => {
+      s.off('private:new', onNew);
+      s.off('call:incoming', onIncoming);
+      s.off('call:accepted', onAccepted);
+      s.off('call:rejected', onRejected);
+      s.off('call:offer', onOffer);
+      s.off('call:answer', onAnswer);
+      s.off('call:ice', onIce);
+      s.off('call:hangup', onHangup);
+    };
+  }, [isAuthenticated, user?.id, activeUserId, callId, iceServers]);
+
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    if (!activeUserId) return;
+
+    let alive = true;
+    setLoadingMessages(true);
+    setError('');
+
+    const s = connectSocket();
+    s.emit('private:join', { otherUserId: activeUserId });
+
+    api
+      .authedRequest<{ ok: true; items: ChatMessage[] }>(`/api/messages/private/${activeUserId}?limit=200`, 'GET')
+      .then((res) => {
+        if (!alive) return;
+        setMessages(res.items || []);
+      })
+      .catch((e: any) => {
+        if (!alive) return;
+        setError(e?.message || 'Failed to load messages');
+      })
+      .finally(() => {
+        if (!alive) return;
+        setLoadingMessages(false);
+      });
+
+    return () => {
+      alive = false;
+    };
+  }, [activeUserId, isAuthenticated]);
+
+  const runUserSearch = async () => {
+    const q = userSearch.trim();
+    if (!q) {
+      setUserResults([]);
+      return;
+    }
+
+    setSearchingUsers(true);
+    setError('');
+    try {
+      const res = await api.authedRequest<{ ok: true; items: DirectoryUser[] }>(
+        `/api/users/directory?q=${encodeURIComponent(q)}&limit=20`,
+        'GET'
+      );
+      const me = String(user?.id);
+      setUserResults((res.items || []).filter((u) => String(u._id) !== me));
+    } catch (e: any) {
+      setError(e?.message || 'Failed to search users');
+    } finally {
+      setSearchingUsers(false);
+    }
+  };
+
+  const openChatWithUser = (u: DirectoryUser) => {
+    const otherId = String(u._id);
+    setActiveUserId(otherId);
+    setDmTargetUserId(null);
+    setShowMobileChat(true);
+
+    setConversations((prev) => {
+      const idx = prev.findIndex((c) => String(c.otherUser._id) === otherId);
+      if (idx === 0) return prev;
+
+      const existing: ConversationItem | null = idx >= 0 ? prev[idx] : null;
+      const nextItem: ConversationItem = existing || {
+        type: 'private',
+        otherUser: {
+          _id: otherId,
+          name: u.name,
+          membershipId: u.membershipId,
+          profilePicture: u.profilePicture,
+          role: u.role,
+          status: u.status,
+        },
+      };
+      const rest = prev.filter((_, i) => i !== idx);
+      return [nextItem, ...rest];
+    });
+  };
+
+  if (!isAuthenticated) {
+    return (
+      <div className="max-w-7xl mx-auto px-4 py-8">
+        <h1 className="text-3xl font-black text-gray-900 mb-4">Messages</h1>
+        <AIInsightBanner text="Secure communication empowers coordination between members. Real-time messaging enables instant collaboration on party initiatives." />
+        <div className="text-center py-20 bg-white rounded-xl border border-gray-100">
+          <User className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+          <h3 className="text-lg font-bold text-gray-900 mb-2">Sign in to access messages</h3>
+          <p className="text-sm text-gray-500 mb-6">Connect with party members through secure messaging</p>
+          <button onClick={() => setShowLoginModal(true)} className="px-6 py-3 bg-blue-600 text-white rounded-xl text-sm font-semibold hover:bg-blue-700 transition-colors">
+            Sign In
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  const handleSend = async (media?: ChatMedia) => {
+    if (!messageInput.trim() && !media) return;
+    if (!activeUserId) return;
+
+    const text = messageInput.trim();
+    const s = connectSocket();
+    s.emit('private:send', { toUserId: activeUserId, text, media: media || null });
+    setMessageInput('');
+  };
+
+  const handlePickFile = async (file: File) => {
+    if (!file) return;
+    if (!activeUserId) return;
+
+    setUploading(true);
+    setError('');
+    try {
+      const uploaded = await api.uploadSingle(file);
+      await handleSend({
+        url: uploaded.file.url,
+        publicId: uploaded.file.publicId,
+        resourceType: uploaded.file.resourceType,
+      });
+    } catch (e: any) {
+      setError(e?.message || 'Failed to upload');
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
+  const getTypeIcon = (type: string) => {
+    switch (type) {
+      case 'community': return <Globe className="w-4 h-4" />;
+      case 'group': return <Users className="w-4 h-4" />;
+      default: return <User className="w-4 h-4" />;
+    }
+  };
+
+  const getTypeColor = (type: string) => {
+    switch (type) {
+      case 'community': return 'from-green-500 to-green-600';
+      case 'group': return 'from-purple-500 to-purple-600';
+      default: return 'from-blue-500 to-blue-600';
+    }
+  };
+
+  return (
+    <div className="max-w-7xl mx-auto px-4 py-8">
+      <div className="mb-4">
+        <h1 className="text-3xl font-black text-gray-900">Messages</h1>
+      </div>
+      <AIInsightBanner text="Secure communication empowers coordination between members. Real-time messaging enables instant collaboration on party initiatives and governance." />
+
+      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm" style={{ height: '600px' }}>
+        <div className="flex h-full">
+          {/* Sidebar */}
+          <div className={`w-full md:w-80 border-r border-gray-200 flex flex-col ${showMobileChat ? 'hidden md:flex' : 'flex'}`}>
+            <div className="p-4 border-b border-gray-100">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                <input
+                  type="text"
+                  placeholder="Search conversations..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full pl-10 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:border-blue-500 outline-none"
+                />
+              </div>
+
+              <div className="mt-3 flex gap-2">
+                <input
+                  type="text"
+                  placeholder="Search users to chat..."
+                  value={userSearch}
+                  onChange={(e) => setUserSearch(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && void runUserSearch()}
+                  className="flex-1 px-4 py-2 bg-white border border-gray-200 rounded-xl text-sm focus:border-blue-500 outline-none"
+                />
+                <button
+                  onClick={() => void runUserSearch()}
+                  disabled={searchingUsers}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-xl text-sm font-semibold hover:bg-blue-700 transition-colors disabled:opacity-50"
+                >
+                  Search
+                </button>
+              </div>
+
+              {userResults.length > 0 && (
+                <div className="mt-3 bg-gray-50 border border-gray-200 rounded-xl overflow-hidden">
+                  {userResults.map((u) => (
+                    <button
+                      key={u._id}
+                      onClick={() => openChatWithUser(u)}
+                      className="w-full text-left px-3 py-2 hover:bg-gray-100 flex items-center justify-between"
+                    >
+                      <div className="min-w-0">
+                        <p className="text-sm font-semibold text-gray-900 truncate">{u.name}</p>
+                        <p className="text-[10px] text-gray-500 truncate">{u.membershipId || ''}</p>
+                      </div>
+                      <span className="text-[10px] font-bold text-blue-700">Chat</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="flex-1 overflow-y-auto">
+              {loadingConversations && <p className="px-4 py-3 text-sm text-gray-500">Loading...</p>}
+              {error && <p className="px-4 py-2 text-sm text-red-600">{error}</p>}
+
+              {filteredConversations.map((c) => (
+                <button
+                  key={c.otherUser._id}
+                  onClick={() => {
+                    setDmTargetUserId(c.otherUser._id);
+                    setActiveUserId(c.otherUser._id);
+                    setShowMobileChat(true);
+                  }}
+                  className={`w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-50 transition-colors border-b border-gray-50 ${
+                    String(activeUserId) === String(c.otherUser._id) ? 'bg-blue-50 border-l-2 border-l-blue-500' : ''
+                  }`}
+                >
+                  <div className={`w-10 h-10 rounded-xl bg-gradient-to-br ${getTypeColor('private')} flex items-center justify-center text-white flex-shrink-0`}>
+                    {getTypeIcon('private')}
+                  </div>
+                  <div className="flex-1 min-w-0 text-left">
+                    <div className="flex items-center justify-between">
+                      <h4 className="text-sm font-semibold text-gray-900 truncate">{c.otherUser.name}</h4>
+                    </div>
+                    <p className="text-xs text-gray-400 truncate">{c.lastMessage?.text || ''}</p>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Chat Area */}
+          <div className={`flex-1 flex flex-col ${!showMobileChat && !activeUserId ? 'hidden md:flex' : 'flex'}`}>
+            {activeConversation ? (
+              <>
+                {/* Chat Header */}
+                <div className="flex items-center justify-between px-5 py-3 border-b border-gray-100">
+                  <div className="flex items-center gap-3">
+                    <button onClick={() => setShowMobileChat(false)} className="md:hidden p-1">
+                      <ArrowLeft className="w-5 h-5 text-gray-600" />
+                    </button>
+                    <div className={`w-9 h-9 rounded-lg bg-gradient-to-br ${getTypeColor('private')} flex items-center justify-center text-white`}>
+                      {getTypeIcon('private')}
+                    </div>
+                    <div>
+                      <h3 className="text-sm font-bold text-gray-900">{activeConversation.otherUser.name}</h3>
+                      <p className="text-[10px] text-gray-400 uppercase font-medium">private chat</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => void placeCall('audio')}
+                      disabled={!activeConversation?.otherUser?._id}
+                      className="p-2 hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-50"
+                      title="Voice call"
+                    >
+                      <Phone className="w-4 h-4 text-gray-400" />
+                    </button>
+                    <button
+                      onClick={() => void placeCall('video')}
+                      disabled={!activeConversation?.otherUser?._id}
+                      className="p-2 hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-50"
+                      title="Video call"
+                    >
+                      <Video className="w-4 h-4 text-gray-400" />
+                    </button>
+                    <button className="p-2 hover:bg-gray-100 rounded-lg transition-colors">
+                      <MoreVertical className="w-4 h-4 text-gray-400" />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Messages */}
+                <div className="flex-1 overflow-y-auto p-5 space-y-4 bg-gray-50">
+                  {loadingMessages && <p className="text-sm text-gray-500">Loading...</p>}
+                  {messages.map((msg) => {
+                    const senderId = String(msg?.from?._id || msg?.from);
+                    const isOwn = senderId === String(user?.id);
+                    const senderName = msg?.from?.name || (isOwn ? 'You' : 'Member');
+                    const time = msg?.createdAt ? new Date(msg.createdAt) : new Date();
+                    return (
+                      <div key={msg._id} className={`flex ${isOwn ? 'justify-end' : 'justify-start'}`}>
+                        <div className={`max-w-[70%] ${isOwn ? 'order-1' : ''}`}>
+                          {!isOwn && (
+                            <p className="text-[10px] text-gray-400 font-medium mb-1 ml-1">{senderName}</p>
+                          )}
+                          <div className={`px-4 py-2.5 rounded-2xl text-sm ${
+                            isOwn
+                              ? 'bg-blue-600 text-white rounded-br-md'
+                              : 'bg-white text-gray-800 rounded-bl-md border border-gray-100 shadow-sm'
+                          }`}>
+                            {msg.text}
+                            {msg.media?.url ? renderMediaPreview(msg.media, isOwn) : null}
+                          </div>
+                          <p className={`text-[10px] text-gray-400 mt-1 ${isOwn ? 'text-right mr-1' : 'ml-1'}`}>
+                            {time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          </p>
+                        </div>
+                      </div>
+                    );
+                  })}
+                  <div ref={messagesEndRef} />
+                </div>
+
+                {/* Input */}
+                <div className="px-4 py-3 border-t border-gray-100 bg-white">
+                  <div className="flex items-center gap-2">
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      className="hidden"
+                      onChange={(e) => {
+                        const f = e.target.files?.[0];
+                        if (f) void handlePickFile(f);
+                      }}
+                    />
+                    <button
+                      onClick={() => fileInputRef.current?.click()}
+                      disabled={uploading}
+                      className="p-2 hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-50"
+                    >
+                      <Paperclip className="w-4 h-4 text-gray-400" />
+                    </button>
+                    <button
+                      onClick={() => fileInputRef.current?.click()}
+                      disabled={uploading}
+                      className="p-2 hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-50"
+                    >
+                      <Image className="w-4 h-4 text-gray-400" />
+                    </button>
+                    <input
+                      type="text"
+                      value={messageInput}
+                      onChange={e => setMessageInput(e.target.value)}
+                      onKeyDown={e => e.key === 'Enter' && void handleSend()}
+                      placeholder="Type a message..."
+                      className="flex-1 px-4 py-2 border border-gray-200 rounded-xl text-sm focus:border-blue-500 outline-none"
+                      disabled={uploading}
+                    />
+                    <button className="p-2 hover:bg-gray-100 rounded-lg transition-colors">
+                      <Smile className="w-4 h-4 text-gray-400" />
+                    </button>
+                    <button
+                      onClick={() => void handleSend()}
+                      disabled={uploading || !messageInput.trim()}
+                      className="p-2.5 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors disabled:opacity-50"
+                    >
+                      <Send className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              </>
+            ) : (
+              <div className="flex-1 flex items-center justify-center bg-gray-50">
+                <div className="text-center">
+                  <div className="w-20 h-20 rounded-2xl bg-gray-100 flex items-center justify-center mx-auto mb-4">
+                    <Hash className="w-10 h-10 text-gray-300" />
+                  </div>
+                  <h3 className="text-lg font-bold text-gray-900 mb-1">Select a conversation</h3>
+                  <p className="text-sm text-gray-500">Choose a chat from the sidebar to start messaging</p>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {callOpen && callId && callOther && (
+        <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl w-full max-w-3xl overflow-hidden shadow-2xl">
+            <div className="p-4 border-b border-gray-100 flex items-center justify-between">
+              <div>
+                <p className="text-xs text-gray-500">
+                  {callIncoming ? 'Incoming call' : 'Call'}
+                  {callStatus === 'calling' ? ' • Calling…' : ''}
+                  {callStatus === 'ringing' ? ' • Ringing…' : ''}
+                  {callStatus === 'connecting' ? ' • Connecting…' : ''}
+                  {callStatus === 'connected' ? ' • Connected' : ''}
+                </p>
+                <p className="text-sm font-bold text-gray-900">
+                  {callOther.name} • {callKind === 'video' ? 'Video' : 'Voice'}
+                </p>
+              </div>
+              <button onClick={hangup} className="px-3 py-2 rounded-lg bg-red-600 text-white text-sm font-bold hover:bg-red-700">
+                Hang up
+              </button>
+            </div>
+
+            <div className="p-4 bg-gray-50">
+              <div className="grid md:grid-cols-2 gap-4">
+                <div className="bg-black rounded-xl overflow-hidden aspect-video flex items-center justify-center">
+                  <video ref={remoteVideoRef} autoPlay playsInline className="w-full h-full object-cover" />
+                </div>
+                <div className="bg-black rounded-xl overflow-hidden aspect-video flex items-center justify-center">
+                  <video ref={localVideoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
+                </div>
+              </div>
+
+              <div className="mt-4 flex items-center justify-between">
+                <div className="flex gap-2">
+                  <button onClick={toggleMute} className="px-4 py-2 rounded-xl bg-white border border-gray-200 text-sm font-bold hover:bg-gray-100">
+                    {callMuted ? 'Unmute' : 'Mute'}
+                  </button>
+                  {callKind === 'video' && (
+                    <button onClick={toggleCam} className="px-4 py-2 rounded-xl bg-white border border-gray-200 text-sm font-bold hover:bg-gray-100">
+                      {callCamOff ? 'Camera on' : 'Camera off'}
+                    </button>
+                  )}
+                </div>
+
+                {callIncoming && (
+                  <div className="flex gap-2">
+                    <button onClick={rejectIncoming} className="px-4 py-2 rounded-xl bg-gray-200 text-gray-900 text-sm font-bold hover:bg-gray-300">
+                      Reject
+                    </button>
+                    <button onClick={() => void acceptIncoming()} className="px-4 py-2 rounded-xl bg-green-600 text-white text-sm font-bold hover:bg-green-700">
+                      Accept
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default MessagesPage;
