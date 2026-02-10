@@ -5,11 +5,13 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:all": "concurrently -n frontend,backend -c cyan,magenta \"vite\" \"npm --prefix backend run dev\"",
     "build": "vite build",
     "build:dev": "vite build --mode development",
+    "postinstall": "npm --prefix backend install",
     "lint": "eslint .",
     "preview": "vite preview",
-    "start": "vite preview --port 10000 --host"
+    "start": "node backend/src/server.js"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.0",
@@ -46,6 +48,7 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cmdk": "^1.0.0",
+    "concurrently": "^9.1.2",
     "date-fns": "^3.6.0",
     "embla-carousel-react": "^8.3.0",
     "highlight.js": "^11.9.0",
