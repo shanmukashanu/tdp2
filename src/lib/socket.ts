@@ -1,5 +1,6 @@
 import { io, type Socket } from 'socket.io-client';
-import { api } from '@/lib/api';
+import API from '@/lib/api.js';
+import { api as apiHelpers } from '@/lib/api';
 
 let socket: Socket | null = null;
 
@@ -8,7 +9,7 @@ export function getSocket(): Socket | null {
 }
 
 export function connectSocket(): Socket {
-  const tokens = api.getStoredTokens();
+  const tokens = apiHelpers.getStoredTokens();
   const token = tokens?.accessToken;
   if (!token) {
     throw new Error('Unauthorized');
@@ -16,7 +17,9 @@ export function connectSocket(): Socket {
 
   if (socket && socket.connected) return socket;
 
-  socket = io(api.API_BASE, {
+  const baseUrl = String(API.defaults.baseURL || apiHelpers.API_BASE || '').replace(/\/+$/, '');
+
+  socket = io(baseUrl, {
     transports: ['websocket'],
     auth: { token },
     autoConnect: true,

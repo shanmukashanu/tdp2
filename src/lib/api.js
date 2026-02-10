@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { api } from './api.ts';
 
 const API = axios.create({
   baseURL: import.meta.env.VITE_API_BASE,
@@ -6,3 +7,5 @@ const API = axios.create({
 });
 
 export default API;
+
+export { api };
