@@ -219,7 +219,7 @@ const ProfilePage: React.FC = () => {
         <div className="flex items-start justify-between gap-3 mb-4 no-print">
           <div>
             <h3 className="text-lg font-bold text-gray-900">TDP Membership Card</h3>
-            <p className="text-xs text-gray-500">Auto-generated from your profile details</p>
+            <p className="text-xs text-gray-500">get your membership card from your profile details</p>
           </div>
           <button
             onClick={handlePrintCard}
