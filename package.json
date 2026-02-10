@@ -7,8 +7,10 @@
     "dev": "vite",
     "build": "vite build",
     "build:dev": "vite build --mode development",
+    "postinstall": "npm --prefix backend install",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "start": "node backend/src/server.js"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.0",

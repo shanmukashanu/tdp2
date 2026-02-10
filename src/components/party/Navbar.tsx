@@ -133,11 +133,11 @@ const Navbar: React.FC = () => {
   onClick={() => handleNav('home')}
   className="flex items-center hover:opacity-80 transition-opacity"
 >
-  <div className="w-25 h-25 flex justify-center pt-8">
+  <div className="w-10 h-10 md:w-12 md:h-12 flex items-center justify-center">
     <img
       src="/logo.png"
       alt="Logo"
-      className="w-25 h-25 object-contain"
+      className="w-full h-full object-contain"
     />
   </div>
 </button>
