@@ -5,7 +5,10 @@ type ApiError = {
   message: string;
 };
 
-const API_BASE = (import.meta as any).env?.VITE_API_URL || 'https://tdp2-frontend.onrender.com';
+const API_BASE =
+  (import.meta as any).env?.VITE_API_BASE ||
+  (import.meta as any).env?.VITE_API_URL ||
+  'https://tdp2-backend-jcjg.onrender.com';
 
 function getStoredTokens() {
   const raw = localStorage.getItem('tdp_tokens');
