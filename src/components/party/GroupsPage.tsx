@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useAppContext } from '@/contexts/AppContext';
 import AIInsightBanner from './AIInsightBanner';
-import { Users, Search, Lock, Globe, Send, Image, Paperclip, User, Plus, X, Phone, Video } from 'lucide-react';
+import { Users, Search, Lock, Globe, Send, Image, Paperclip, User, Plus, X, Phone, Video, ArrowLeft } from 'lucide-react';
 
 import { api } from '@/lib/api';
 import { connectSocket } from '@/lib/socket';
@@ -68,6 +68,7 @@ const GroupsPage: React.FC = () => {
 
   const [searchQuery, setSearchQuery] = useState('');
   const [activeGroupId, setActiveGroupId] = useState<string | null>(null);
+  const [showMobileChat, setShowMobileChat] = useState(false);
 
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [messageInput, setMessageInput] = useState('');
@@ -863,7 +864,7 @@ const GroupsPage: React.FC = () => {
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm" style={{ height: '650px' }}>
         <div className="flex h-full">
           {/* Left group list */}
-          <div className="w-full md:w-96 border-r border-gray-200 flex flex-col">
+          <div className={`w-full md:w-96 border-r border-gray-200 flex-col ${showMobileChat ? 'hidden md:flex' : 'flex'}`}>
             <div className="p-4 border-b border-gray-100">
               <div className="flex items-center justify-between gap-2 mb-3">
                 <p className="text-xs font-bold text-gray-500 uppercase">Groups</p>
@@ -941,7 +942,10 @@ const GroupsPage: React.FC = () => {
                 return (
                   <button
                     key={g._id}
-                    onClick={() => setActiveGroupId(g._id)}
+                    onClick={() => {
+                      setActiveGroupId(g._id);
+                      setShowMobileChat(true);
+                    }}
                     className={`w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-50 transition-colors border-b border-gray-50 ${
                       String(activeGroupId) === String(g._id) ? 'bg-blue-50 border-l-2 border-l-blue-500' : ''
                     }`}
@@ -966,7 +970,7 @@ const GroupsPage: React.FC = () => {
           </div>
 
           {/* Right group chat */}
-          <div className="flex-1 flex flex-col">
+          <div className={`flex-1 flex flex-col ${activeGroup ? (showMobileChat ? 'flex' : 'hidden md:flex') : 'hidden md:flex'}`}>
             {!activeGroup ? (
               <div className="flex-1 flex items-center justify-center bg-gray-50">
                 <div className="text-center">
@@ -980,7 +984,14 @@ const GroupsPage: React.FC = () => {
             ) : (
               <>
                 <div className="flex items-center justify-between px-2 sm:px-3 md:px-5 py-3 border-b border-gray-100 gap-2 w-full">
-                  <div className="flex items-center gap-3 min-w-0">
+                  <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+                    <button
+                      onClick={() => setShowMobileChat(false)}
+                      className="md:hidden p-1.5 hover:bg-gray-100 rounded-lg transition-colors flex-shrink-0"
+                      title="Back"
+                    >
+                      <ArrowLeft className="w-4 h-4 text-gray-500" />
+                    </button>
                     <div className={`w-8 h-8 sm:w-9 sm:h-9 rounded-lg bg-gradient-to-br ${activeGroup.isPublic ? 'from-green-500 to-green-600' : 'from-red-500 to-red-600'} flex items-center justify-center text-white flex-shrink-0`}>
                       {activeGroup.isPublic ? <Globe className="w-4 h-4" /> : <Lock className="w-4 h-4" />}
                     </div>
@@ -990,19 +1001,19 @@ const GroupsPage: React.FC = () => {
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-1 flex-shrink-0">
+                  <div className="flex items-center gap-0.5 sm:gap-1 flex-shrink-0">
                     {(isJoined || user?.role === 'admin') && (
                       <>
                         <button
                           onClick={() => void startGroupCall('audio')}
-                          className="p-1.5 sm:p-2 hover:bg-gray-100 rounded-lg transition-colors flex-shrink-0"
+                          className="p-1 sm:p-2 hover:bg-gray-100 rounded-lg transition-colors flex-shrink-0"
                           title="Group voice call"
                         >
                           <Phone className="w-4 h-4 text-gray-400" />
                         </button>
                         <button
                           onClick={() => void startGroupCall('video')}
-                          className="p-1.5 sm:p-2 hover:bg-gray-100 rounded-lg transition-colors flex-shrink-0"
+                          className="p-1 sm:p-2 hover:bg-gray-100 rounded-lg transition-colors flex-shrink-0"
                           title="Group video call"
                         >
                           <Video className="w-4 h-4 text-gray-400" />
@@ -1153,7 +1164,7 @@ const GroupsPage: React.FC = () => {
                     </div>
 
                     <div className="px-2 sm:px-4 py-3 border-t border-gray-100 bg-white">
-                      <div className="flex items-center gap-1.5 sm:gap-2 w-full">
+                      <div className="flex items-center gap-1 sm:gap-2 w-full">
                         <input
                           ref={fileInputRef}
                           type="file"
@@ -1167,14 +1178,14 @@ const GroupsPage: React.FC = () => {
                         <button
                           onClick={() => fileInputRef.current?.click()}
                           disabled={uploading}
-                          className="p-2 hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-50 flex-shrink-0"
+                          className="p-1.5 sm:p-2 hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-50 flex-shrink-0"
                         >
                           <Paperclip className="w-4 h-4 text-gray-400" />
                         </button>
                         <button
                           onClick={() => fileInputRef.current?.click()}
                           disabled={uploading}
-                          className="p-2 hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-50 flex-shrink-0"
+                          className="p-1.5 sm:p-2 hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-50 flex-shrink-0"
                         >
                           <Image className="w-4 h-4 text-gray-400" />
                         </button>
@@ -1190,7 +1201,7 @@ const GroupsPage: React.FC = () => {
                         <button
                           onClick={() => void handleSend()}
                           disabled={uploading || !messageInput.trim()}
-                          className="p-2.5 bg-purple-600 text-white rounded-xl hover:bg-purple-700 transition-colors disabled:opacity-50 flex-shrink-0"
+                          className="p-2 sm:p-2.5 bg-purple-600 text-white rounded-xl hover:bg-purple-700 transition-colors disabled:opacity-50 flex-shrink-0"
                         >
                           <Send className="w-4 h-4" />
                         </button>
