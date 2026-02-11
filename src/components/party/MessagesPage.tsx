@@ -140,7 +140,7 @@ const MessagesPage: React.FC = () => {
 
   const callSocketRef = useRef<ReturnType<typeof connectSocket> | null>(null);
 
-  const toneRef = useRef<{ ctx: AudioContext; osc: OscillatorNode; gain: GainNode; timer: any } | null>(null);
+  const ringtoneRef = useRef<HTMLAudioElement | null>(null);
 
   const iceServers = useMemo(
     () => ({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] }),
@@ -148,24 +148,14 @@ const MessagesPage: React.FC = () => {
   );
 
   const cleanupCall = () => {
-    if (toneRef.current) {
-      const t = toneRef.current;
-      toneRef.current = null;
+    if (ringtoneRef.current) {
       try {
-        clearInterval(t.timer);
+        ringtoneRef.current.pause();
+        ringtoneRef.current.currentTime = 0;
       } catch {
         // ignore
       }
-      try {
-        t.osc.stop();
-      } catch {
-        // ignore
-      }
-      try {
-        t.ctx.close();
-      } catch {
-        // ignore
-      }
+      ringtoneRef.current = null;
     }
 
     try {
@@ -201,55 +191,25 @@ const MessagesPage: React.FC = () => {
     setCallStatus('ended');
   };
 
-  const startTone = (mode: 'ring' | 'ringback') => {
-    if (toneRef.current) return;
-    const Ctx = (window.AudioContext || (window as any).webkitAudioContext) as typeof AudioContext;
-    if (!Ctx) return;
-
-    const ctx = new Ctx();
-    try {
-      void ctx.resume();
-    } catch {
+  const startTone = (_mode: 'ring' | 'ringback') => {
+    if (ringtoneRef.current) return;
+    const a = new Audio('/ringtone.mp3');
+    a.loop = true;
+    ringtoneRef.current = a;
+    a.play().catch(() => {
       // ignore
-    }
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.type = 'sine';
-    osc.frequency.value = mode === 'ring' ? 880 : 440;
-    gain.gain.value = 0;
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-    osc.start();
-
-    let on = false;
-    const timer = setInterval(() => {
-      on = !on;
-      gain.gain.value = on ? 0.06 : 0;
-      osc.frequency.value = mode === 'ring' ? (on ? 880 : 660) : (on ? 440 : 480);
-    }, mode === 'ring' ? 400 : 500);
-
-    toneRef.current = { ctx, osc, gain, timer };
+    });
   };
 
   const stopTone = () => {
-    if (!toneRef.current) return;
-    const t = toneRef.current;
-    toneRef.current = null;
+    if (!ringtoneRef.current) return;
     try {
-      clearInterval(t.timer);
+      ringtoneRef.current.pause();
+      ringtoneRef.current.currentTime = 0;
     } catch {
       // ignore
     }
-    try {
-      t.osc.stop();
-    } catch {
-      // ignore
-    }
-    try {
-      t.ctx.close();
-    } catch {
-      // ignore
-    }
+    ringtoneRef.current = null;
   };
 
   const ensurePc = (sock: any, id: string) => {
@@ -817,24 +777,24 @@ const MessagesPage: React.FC = () => {
             {activeConversation ? (
               <>
                 {/* Chat Header */}
-                <div className="flex items-center justify-between px-5 py-3 border-b border-gray-100">
-                  <div className="flex items-center gap-3">
+                <div className="flex items-center justify-between px-3 md:px-5 py-3 border-b border-gray-100 gap-2">
+                  <div className="flex items-center gap-3 min-w-0">
                     <button onClick={() => setShowMobileChat(false)} className="md:hidden p-1">
                       <ArrowLeft className="w-5 h-5 text-gray-600" />
                     </button>
                     <div className={`w-9 h-9 rounded-lg bg-gradient-to-br ${getTypeColor('private')} flex items-center justify-center text-white`}>
                       {getTypeIcon('private')}
                     </div>
-                    <div>
+                    <div className="min-w-0">
                       <h3 className="text-sm font-bold text-gray-900">{activeConversation.otherUser.name}</h3>
                       <p className="text-[10px] text-gray-400 uppercase font-medium">private chat</p>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1 flex-shrink-0">
                     <button
                       onClick={() => void placeCall('audio')}
                       disabled={!activeConversation?.otherUser?._id}
-                      className="p-2 hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-50"
+                      className="p-2 hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-50 flex-shrink-0"
                       title="Voice call"
                     >
                       <Phone className="w-4 h-4 text-gray-400" />
@@ -842,7 +802,7 @@ const MessagesPage: React.FC = () => {
                     <button
                       onClick={() => void placeCall('video')}
                       disabled={!activeConversation?.otherUser?._id}
-                      className="p-2 hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-50"
+                      className="p-2 hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-50 flex-shrink-0"
                       title="Video call"
                     >
                       <Video className="w-4 h-4 text-gray-400" />
@@ -887,7 +847,7 @@ const MessagesPage: React.FC = () => {
 
                 {/* Input */}
                 <div className="px-4 py-3 border-t border-gray-100 bg-white">
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 w-full">
                     <input
                       ref={fileInputRef}
                       type="file"
@@ -900,14 +860,14 @@ const MessagesPage: React.FC = () => {
                     <button
                       onClick={() => fileInputRef.current?.click()}
                       disabled={uploading}
-                      className="p-2 hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-50"
+                      className="p-2 hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-50 flex-shrink-0"
                     >
                       <Paperclip className="w-4 h-4 text-gray-400" />
                     </button>
                     <button
                       onClick={() => fileInputRef.current?.click()}
                       disabled={uploading}
-                      className="p-2 hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-50"
+                      className="p-2 hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-50 flex-shrink-0"
                     >
                       <Image className="w-4 h-4 text-gray-400" />
                     </button>
@@ -917,16 +877,16 @@ const MessagesPage: React.FC = () => {
                       onChange={e => setMessageInput(e.target.value)}
                       onKeyDown={e => e.key === 'Enter' && void handleSend()}
                       placeholder="Type a message..."
-                      className="flex-1 px-4 py-2 border border-gray-200 rounded-xl text-sm focus:border-blue-500 outline-none"
+                      className="flex-1 min-w-0 px-4 py-2 border border-gray-200 rounded-xl text-sm focus:border-blue-500 outline-none"
                       disabled={uploading}
                     />
-                    <button className="p-2 hover:bg-gray-100 rounded-lg transition-colors">
+                    <button className="p-2 hover:bg-gray-100 rounded-lg transition-colors hidden sm:inline-flex flex-shrink-0">
                       <Smile className="w-4 h-4 text-gray-400" />
                     </button>
                     <button
                       onClick={() => void handleSend()}
                       disabled={uploading || !messageInput.trim()}
-                      className="p-2.5 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors disabled:opacity-50"
+                      className="p-2.5 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors disabled:opacity-50 flex-shrink-0"
                     >
                       <Send className="w-4 h-4" />
                     </button>
@@ -970,11 +930,9 @@ const MessagesPage: React.FC = () => {
             </div>
 
             <div className="p-4 bg-gray-50">
-              <div className="grid md:grid-cols-2 gap-4">
-                <div className="bg-black rounded-xl overflow-hidden aspect-video flex items-center justify-center">
-                  <video ref={remoteVideoRef} autoPlay playsInline className="w-full h-full object-cover" />
-                </div>
-                <div className="bg-black rounded-xl overflow-hidden aspect-video flex items-center justify-center">
+              <div className="relative bg-black rounded-xl overflow-hidden aspect-video flex items-center justify-center">
+                <video ref={remoteVideoRef} autoPlay playsInline className="w-full h-full object-cover" />
+                <div className="absolute bottom-3 right-3 w-28 h-40 sm:w-36 sm:h-24 md:w-44 md:h-28 bg-black rounded-lg overflow-hidden border border-white/20">
                   <video ref={localVideoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
                 </div>
               </div>

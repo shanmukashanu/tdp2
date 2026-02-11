@@ -139,13 +139,27 @@ const MembersPage: React.FC = () => {
         {filteredMembers.map(member => (
           <div key={member._id} className="bg-white rounded-xl border border-gray-100 p-5 hover:shadow-md transition-all group">
             <div className="flex items-start gap-4">
-              <div className={`w-14 h-14 rounded-xl flex items-center justify-center text-white text-lg font-bold shadow-md ${
-                member.status === 'active'
-                  ? 'bg-gradient-to-br from-blue-500 to-blue-700'
-                  : 'bg-gradient-to-br from-gray-400 to-gray-500'
-              }`}>
-                {initials(member.name)}
-              </div>
+              {member.profilePicture ? (
+                <div className="w-14 h-14 rounded-xl overflow-hidden shadow-md border border-gray-100 bg-white flex-shrink-0">
+                  <img
+                    src={member.profilePicture}
+                    alt={member.name}
+                    className="w-full h-full object-cover"
+                    loading="lazy"
+                    onError={(e) => {
+                      (e.currentTarget as HTMLImageElement).style.display = 'none';
+                    }}
+                  />
+                </div>
+              ) : (
+                <div className={`w-14 h-14 rounded-xl flex items-center justify-center text-white text-lg font-bold shadow-md flex-shrink-0 ${
+                  member.status === 'active'
+                    ? 'bg-gradient-to-br from-blue-500 to-blue-700'
+                    : 'bg-gradient-to-br from-gray-400 to-gray-500'
+                }`}>
+                  {initials(member.name)}
+                </div>
+              )}
               <div className="flex-1 min-w-0">
                 <h3 className="font-bold text-gray-900 truncate">{member.name}</h3>
                 <p className="text-xs text-blue-600 font-medium">{member.role || 'Member'}</p>
@@ -194,9 +208,23 @@ const MembersPage: React.FC = () => {
             </div>
             <div className="px-6 pb-6">
               <div className="-mt-10 mb-4">
-                <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center text-white text-2xl font-bold border-4 border-white shadow-lg">
-                  {selectedMember.avatar}
-                </div>
+                {selectedMember.profilePicture ? (
+                  <div className="w-20 h-20 rounded-2xl overflow-hidden border-4 border-white shadow-lg bg-white">
+                    <img
+                      src={selectedMember.profilePicture}
+                      alt={selectedMember.name}
+                      className="w-full h-full object-cover"
+                      loading="lazy"
+                      onError={(e) => {
+                        (e.currentTarget as HTMLImageElement).style.display = 'none';
+                      }}
+                    />
+                  </div>
+                ) : (
+                  <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center text-white text-2xl font-bold border-4 border-white shadow-lg">
+                    {initials(selectedMember.name)}
+                  </div>
+                )}
               </div>
               <h2 className="text-xl font-bold text-gray-900">{selectedMember.name}</h2>
               <p className="text-sm text-blue-600 font-medium">{selectedMember.role || 'Member'}</p>

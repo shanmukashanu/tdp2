@@ -87,7 +87,7 @@ const GroupsPage: React.FC = () => {
 
   const groupCallSocketRef = useRef<ReturnType<typeof connectSocket> | null>(null);
 
-  const toneRef = useRef<{ ctx: AudioContext; osc: OscillatorNode; gain: GainNode; timer: any } | null>(null);
+  const ringtoneRef = useRef<HTMLAudioElement | null>(null);
 
   const iceServers = useMemo(
     () => ({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] }),
@@ -141,24 +141,14 @@ const GroupsPage: React.FC = () => {
   }, [activeGroupId, messages.length]);
 
   const cleanupGroupCall = () => {
-    if (toneRef.current) {
-      const t = toneRef.current;
-      toneRef.current = null;
+    if (ringtoneRef.current) {
       try {
-        clearInterval(t.timer);
+        ringtoneRef.current.pause();
+        ringtoneRef.current.currentTime = 0;
       } catch {
         // ignore
       }
-      try {
-        t.osc.stop();
-      } catch {
-        // ignore
-      }
-      try {
-        t.ctx.close();
-      } catch {
-        // ignore
-      }
+      ringtoneRef.current = null;
     }
 
     for (const pc of pcsRef.current.values()) {
@@ -193,55 +183,25 @@ const GroupsPage: React.FC = () => {
     setCallStatus('ended');
   };
 
-  const startTone = (mode: 'ring' | 'ringback') => {
-    if (toneRef.current) return;
-    const Ctx = (window.AudioContext || (window as any).webkitAudioContext) as typeof AudioContext;
-    if (!Ctx) return;
-
-    const ctx = new Ctx();
-    try {
-      void ctx.resume();
-    } catch {
+  const startTone = (_mode: 'ring' | 'ringback') => {
+    if (ringtoneRef.current) return;
+    const a = new Audio('/ringtone.mp3');
+    a.loop = true;
+    ringtoneRef.current = a;
+    a.play().catch(() => {
       // ignore
-    }
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.type = 'sine';
-    osc.frequency.value = mode === 'ring' ? 880 : 440;
-    gain.gain.value = 0;
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-    osc.start();
-
-    let on = false;
-    const timer = setInterval(() => {
-      on = !on;
-      gain.gain.value = on ? 0.06 : 0;
-      osc.frequency.value = mode === 'ring' ? (on ? 880 : 660) : (on ? 440 : 480);
-    }, mode === 'ring' ? 400 : 500);
-
-    toneRef.current = { ctx, osc, gain, timer };
+    });
   };
 
   const stopTone = () => {
-    if (!toneRef.current) return;
-    const t = toneRef.current;
-    toneRef.current = null;
+    if (!ringtoneRef.current) return;
     try {
-      clearInterval(t.timer);
+      ringtoneRef.current.pause();
+      ringtoneRef.current.currentTime = 0;
     } catch {
       // ignore
     }
-    try {
-      t.osc.stop();
-    } catch {
-      // ignore
-    }
-    try {
-      t.ctx.close();
-    } catch {
-      // ignore
-    }
+    ringtoneRef.current = null;
   };
 
   const startLocalMedia = async (kind: 'audio' | 'video') => {
@@ -860,30 +820,30 @@ const GroupsPage: React.FC = () => {
               </div>
             ) : (
               <>
-                <div className="flex items-center justify-between px-5 py-3 border-b border-gray-100">
-                  <div className="flex items-center gap-3">
+                <div className="flex items-center justify-between px-3 md:px-5 py-3 border-b border-gray-100 gap-2">
+                  <div className="flex items-center gap-3 min-w-0">
                     <div className={`w-9 h-9 rounded-lg bg-gradient-to-br ${activeGroup.isPublic ? 'from-green-500 to-green-600' : 'from-red-500 to-red-600'} flex items-center justify-center text-white`}>
                       {activeGroup.isPublic ? <Globe className="w-4 h-4" /> : <Lock className="w-4 h-4" />}
                     </div>
-                    <div>
+                    <div className="min-w-0">
                       <h3 className="text-sm font-bold text-gray-900">{activeGroup.name}</h3>
                       <p className="text-[10px] text-gray-400 uppercase font-medium">{activeGroup.isPublic ? 'public' : 'private'} group</p>
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1 flex-shrink-0">
                     {(isJoined || user?.role === 'admin') && (
                       <>
                         <button
                           onClick={() => void startGroupCall('audio')}
-                          className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                          className="p-2 hover:bg-gray-100 rounded-lg transition-colors flex-shrink-0"
                           title="Group voice call"
                         >
                           <Phone className="w-4 h-4 text-gray-400" />
                         </button>
                         <button
                           onClick={() => void startGroupCall('video')}
-                          className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                          className="p-2 hover:bg-gray-100 rounded-lg transition-colors flex-shrink-0"
                           title="Group video call"
                         >
                           <Video className="w-4 h-4 text-gray-400" />
@@ -1004,7 +964,7 @@ const GroupsPage: React.FC = () => {
                     </div>
 
                     <div className="px-4 py-3 border-t border-gray-100 bg-white">
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 w-full">
                         <input
                           ref={fileInputRef}
                           type="file"
@@ -1018,14 +978,14 @@ const GroupsPage: React.FC = () => {
                         <button
                           onClick={() => fileInputRef.current?.click()}
                           disabled={uploading}
-                          className="p-2 hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-50"
+                          className="p-2 hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-50 flex-shrink-0"
                         >
                           <Paperclip className="w-4 h-4 text-gray-400" />
                         </button>
                         <button
                           onClick={() => fileInputRef.current?.click()}
                           disabled={uploading}
-                          className="p-2 hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-50"
+                          className="p-2 hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-50 flex-shrink-0"
                         >
                           <Image className="w-4 h-4 text-gray-400" />
                         </button>
@@ -1035,13 +995,13 @@ const GroupsPage: React.FC = () => {
                           onChange={(e) => setMessageInput(e.target.value)}
                           onKeyDown={(e) => e.key === 'Enter' && void handleSend()}
                           placeholder={uploading ? 'Uploading...' : 'Type a message...'}
-                          className="flex-1 px-4 py-2 border border-gray-200 rounded-xl text-sm focus:border-purple-500 outline-none"
+                          className="flex-1 min-w-0 px-4 py-2 border border-gray-200 rounded-xl text-sm focus:border-purple-500 outline-none"
                           disabled={uploading}
                         />
                         <button
                           onClick={() => void handleSend()}
                           disabled={uploading || !messageInput.trim()}
-                          className="p-2.5 bg-purple-600 text-white rounded-xl hover:bg-purple-700 transition-colors disabled:opacity-50"
+                          className="p-2.5 bg-purple-600 text-white rounded-xl hover:bg-purple-700 transition-colors disabled:opacity-50 flex-shrink-0"
                         >
                           <Send className="w-4 h-4" />
                         </button>
@@ -1079,26 +1039,47 @@ const GroupsPage: React.FC = () => {
           </div>
 
           <div className="p-4 bg-gray-50">
-            <div className="grid md:grid-cols-3 gap-3">
-              <div className="bg-black rounded-xl overflow-hidden aspect-video flex items-center justify-center">
+            <div className="relative bg-black rounded-xl overflow-hidden aspect-video flex items-center justify-center">
+              {remoteStreams.length > 0 ? (
+                <video
+                  ref={(el) => {
+                    const uid = remoteStreams[0]?.userId;
+                    if (!uid) return;
+                    remoteVideoElsRef.current.set(String(uid), el);
+                    const rs = remoteStreams.find((x) => String(x.userId) === String(uid));
+                    if (el && rs?.stream && el.srcObject !== rs.stream) el.srcObject = rs.stream;
+                  }}
+                  autoPlay
+                  playsInline
+                  className="w-full h-full object-cover"
+                />
+              ) : (
+                <video ref={localVideoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
+              )}
+
+              <div className="absolute bottom-3 right-3 w-28 h-40 sm:w-36 sm:h-24 md:w-44 md:h-28 bg-black rounded-lg overflow-hidden border border-white/20">
                 <video ref={localVideoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
               </div>
-
-              {remoteStreams.map(({ userId: uid }) => (
-                <div key={uid} className="bg-black rounded-xl overflow-hidden aspect-video flex items-center justify-center">
-                  <video
-                    ref={(el) => {
-                      remoteVideoElsRef.current.set(String(uid), el);
-                      const rs = remoteStreams.find((x) => String(x.userId) === String(uid));
-                      if (el && rs?.stream && el.srcObject !== rs.stream) el.srcObject = rs.stream;
-                    }}
-                    autoPlay
-                    playsInline
-                    className="w-full h-full object-cover"
-                  />
-                </div>
-              ))}
             </div>
+
+            {remoteStreams.length > 1 && (
+              <div className="mt-3 flex gap-2 overflow-x-auto">
+                {remoteStreams.slice(1).map(({ userId: uid }) => (
+                  <div key={uid} className="bg-black rounded-lg overflow-hidden w-28 h-20 flex-shrink-0">
+                    <video
+                      ref={(el) => {
+                        remoteVideoElsRef.current.set(String(uid), el);
+                        const rs = remoteStreams.find((x) => String(x.userId) === String(uid));
+                        if (el && rs?.stream && el.srcObject !== rs.stream) el.srcObject = rs.stream;
+                      }}
+                      autoPlay
+                      playsInline
+                      className="w-full h-full object-cover"
+                    />
+                  </div>
+                ))}
+              </div>
+            )}
 
             <div className="mt-4 flex items-center justify-between">
               <div className="flex gap-2">

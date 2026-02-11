@@ -221,7 +221,7 @@ const CommunityPage: React.FC = () => {
           </div>
 
           <div className="px-4 py-3 border-t border-gray-100 bg-white">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 w-full">
               <input
                 ref={fileInputRef}
                 type="file"
@@ -235,7 +235,7 @@ const CommunityPage: React.FC = () => {
               <button
                 onClick={() => fileInputRef.current?.click()}
                 disabled={uploading}
-                className="p-2 hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-50"
+                className="p-2 hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-50 flex-shrink-0"
                 title="Upload media"
               >
                 <Paperclip className="w-4 h-4 text-gray-400" />
@@ -243,7 +243,7 @@ const CommunityPage: React.FC = () => {
               <button
                 onClick={() => fileInputRef.current?.click()}
                 disabled={uploading}
-                className="p-2 hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-50"
+                className="p-2 hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-50 flex-shrink-0"
                 title="Upload image/video"
               >
                 <Image className="w-4 h-4 text-gray-400" />
@@ -254,13 +254,13 @@ const CommunityPage: React.FC = () => {
                 onChange={(e) => setMessageInput(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && void handleSend()}
                 placeholder={uploading ? 'Uploading...' : 'Type a message...'}
-                className="flex-1 px-4 py-2 border border-gray-200 rounded-xl text-sm focus:border-green-500 outline-none"
+                className="flex-1 min-w-0 px-4 py-2 border border-gray-200 rounded-xl text-sm focus:border-green-500 outline-none"
                 disabled={uploading}
               />
               <button
                 onClick={() => void handleSend()}
                 disabled={uploading || !messageInput.trim()}
-                className="p-2.5 bg-green-600 text-white rounded-xl hover:bg-green-700 transition-colors disabled:opacity-50"
+                className="p-2.5 bg-green-600 text-white rounded-xl hover:bg-green-700 transition-colors disabled:opacity-50 flex-shrink-0"
               >
                 <Send className="w-4 h-4" />
               </button>
