@@ -289,12 +289,6 @@ const Navbar: React.FC = () => {
                 >
                   Login / Sign Up
                 </button>
-                <button
-                  onClick={() => { setLoginMode('admin'); setShowLoginModal(true); setMobileOpen(false); }}
-                  className="w-full py-3 bg-gray-100 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-200 transition-colors"
-                >
-                  Admin Login
-                </button>
               </div>
             )}
           </div>

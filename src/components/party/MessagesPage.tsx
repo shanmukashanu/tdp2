@@ -313,7 +313,6 @@ const MessagesPage: React.FC = () => {
     setCallIncoming(false);
     setCallOpen(true);
     setCallStatus('calling');
-    startTone('ringback');
 
     await startLocalMedia(kind);
     const pc = ensurePc(sock, id);
@@ -321,6 +320,8 @@ const MessagesPage: React.FC = () => {
       pc.addTrack(track, localStreamRef.current as MediaStream);
     }
 
+    const offer = await pc.createOffer();
+    await pc.setLocalDescription(offer);
     sock.emit('call:invite', { toUserId: otherId, callId: id, kind });
   };
 
@@ -777,16 +778,16 @@ const MessagesPage: React.FC = () => {
             {activeConversation ? (
               <>
                 {/* Chat Header */}
-                <div className="flex items-center justify-between px-3 md:px-5 py-3 border-b border-gray-100 gap-2">
+                <div className="flex items-center justify-between px-2 sm:px-3 md:px-5 py-3 border-b border-gray-100 gap-2 w-full">
                   <div className="flex items-center gap-3 min-w-0">
                     <button onClick={() => setShowMobileChat(false)} className="md:hidden p-1">
                       <ArrowLeft className="w-5 h-5 text-gray-600" />
                     </button>
-                    <div className={`w-9 h-9 rounded-lg bg-gradient-to-br ${getTypeColor('private')} flex items-center justify-center text-white`}>
+                    <div className={`w-8 h-8 sm:w-9 sm:h-9 rounded-lg bg-gradient-to-br ${getTypeColor('private')} flex items-center justify-center text-white flex-shrink-0`}>
                       {getTypeIcon('private')}
                     </div>
                     <div className="min-w-0">
-                      <h3 className="text-sm font-bold text-gray-900">{activeConversation.otherUser.name}</h3>
+                      <h3 className="text-sm font-bold text-gray-900 truncate">{activeConversation.otherUser.name}</h3>
                       <p className="text-[10px] text-gray-400 uppercase font-medium">private chat</p>
                     </div>
                   </div>
@@ -794,7 +795,7 @@ const MessagesPage: React.FC = () => {
                     <button
                       onClick={() => void placeCall('audio')}
                       disabled={!activeConversation?.otherUser?._id}
-                      className="p-2 hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-50 flex-shrink-0"
+                      className="p-1.5 sm:p-2 hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-50 flex-shrink-0"
                       title="Voice call"
                     >
                       <Phone className="w-4 h-4 text-gray-400" />
@@ -802,7 +803,7 @@ const MessagesPage: React.FC = () => {
                     <button
                       onClick={() => void placeCall('video')}
                       disabled={!activeConversation?.otherUser?._id}
-                      className="p-2 hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-50 flex-shrink-0"
+                      className="p-1.5 sm:p-2 hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-50 flex-shrink-0"
                       title="Video call"
                     >
                       <Video className="w-4 h-4 text-gray-400" />
@@ -846,8 +847,8 @@ const MessagesPage: React.FC = () => {
                 </div>
 
                 {/* Input */}
-                <div className="px-4 py-3 border-t border-gray-100 bg-white">
-                  <div className="flex items-center gap-2 w-full">
+                <div className="px-2 sm:px-4 py-3 border-t border-gray-100 bg-white">
+                  <div className="flex items-center gap-1.5 sm:gap-2 w-full">
                     <input
                       ref={fileInputRef}
                       type="file"
@@ -860,14 +861,14 @@ const MessagesPage: React.FC = () => {
                     <button
                       onClick={() => fileInputRef.current?.click()}
                       disabled={uploading}
-                      className="p-2 hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-50 flex-shrink-0"
+                      className="p-1.5 sm:p-2 hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-50 flex-shrink-0"
                     >
                       <Paperclip className="w-4 h-4 text-gray-400" />
                     </button>
                     <button
                       onClick={() => fileInputRef.current?.click()}
                       disabled={uploading}
-                      className="p-2 hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-50 flex-shrink-0"
+                      className="p-1.5 sm:p-2 hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-50 flex-shrink-0 hidden sm:inline-flex"
                     >
                       <Image className="w-4 h-4 text-gray-400" />
                     </button>
@@ -877,7 +878,7 @@ const MessagesPage: React.FC = () => {
                       onChange={e => setMessageInput(e.target.value)}
                       onKeyDown={e => e.key === 'Enter' && void handleSend()}
                       placeholder="Type a message..."
-                      className="flex-1 min-w-0 px-4 py-2 border border-gray-200 rounded-xl text-sm focus:border-blue-500 outline-none"
+                      className="flex-1 min-w-0 px-3 sm:px-4 py-2 border border-gray-200 rounded-xl text-sm focus:border-blue-500 outline-none"
                       disabled={uploading}
                     />
                     <button className="p-2 hover:bg-gray-100 rounded-lg transition-colors hidden sm:inline-flex flex-shrink-0">

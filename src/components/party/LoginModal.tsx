@@ -8,8 +8,6 @@ const LoginModal: React.FC = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const [isSignup, setIsSignup] = useState(false);
-  const [name, setName] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -31,7 +29,6 @@ const LoginModal: React.FC = () => {
       }
       setEmail('');
       setPassword('');
-      setName('');
     } catch (e: any) {
       setError(e?.message || 'Login failed');
     } finally {
@@ -74,34 +71,14 @@ const LoginModal: React.FC = () => {
           </div>
 
           <h2 className="text-2xl font-bold text-center text-gray-900 mb-1">
-            {loginMode === 'admin' ? 'Admin Portal' : isSignup ? 'Join TDP Party' : 'Welcome Back'}
+            {loginMode === 'admin' ? 'Admin Portal' : 'Welcome Back'}
           </h2>
           <p className="text-sm text-center text-gray-500 mb-6">
-            {loginMode === 'admin' ? 'Secure admin access' : isSignup ? 'Create your member account' : 'Sign in to your account'}
+            {loginMode === 'admin' ? 'Secure admin access' : 'Sign in to your account'}
           </p>
 
-          {/* Mode toggle */}
-          <div className="flex bg-gray-100 rounded-xl p-1 mb-6">
-            <button
-              onClick={() => setLoginMode('user')}
-              className={`flex-1 py-2 rounded-lg text-sm font-medium transition-all ${
-                loginMode === 'user' ? 'bg-white text-blue-700 shadow-sm' : 'text-gray-500'
-              }`}
-            >
-              Member Login
-            </button>
-            <button
-              onClick={() => setLoginMode('admin')}
-              className={`flex-1 py-2 rounded-lg text-sm font-medium transition-all ${
-                loginMode === 'admin' ? 'bg-white text-red-700 shadow-sm' : 'text-gray-500'
-              }`}
-            >
-              Admin Login
-            </button>
-          </div>
-
           {/* Google OAuth - only for user */}
-          {loginMode === 'user' && !isSignup && (
+          {loginMode === 'user' && (
             <>
               <button
                 onClick={handleGoogleLogin}
@@ -132,33 +109,17 @@ const LoginModal: React.FC = () => {
           )}
 
           <form onSubmit={handleSubmit} className="space-y-4">
-            {isSignup && loginMode === 'user' && (
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">Full Name</label>
-                <div className="relative">
-                  <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                  <input
-                    type="text"
-                    value={name}
-                    onChange={e => setName(e.target.value)}
-                    placeholder="Enter your full name"
-                    className="w-full pl-10 pr-4 py-3 border border-gray-200 rounded-xl text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none transition-all"
-                  />
-                </div>
-              </div>
-            )}
-
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1.5">
-                {loginMode === 'admin' ? 'Admin Email' : 'Email Address'}
+                {loginMode === 'admin' ? 'Admin Email' : 'Username / Email'}
               </label>
               <div className="relative">
                 <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                 <input
-                  type="email"
+                  type="text"
                   value={email}
                   onChange={e => setEmail(e.target.value)}
-                  placeholder={loginMode === 'admin' ? 'admin@tdpparty.org' : 'you@example.com'}
+                  placeholder={loginMode === 'admin' ? 'admin@tdpparty.org' : 'Enter username or email'}
                   className="w-full pl-10 pr-4 py-3 border border-gray-200 rounded-xl text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none transition-all"
                 />
               </div>
@@ -203,22 +164,10 @@ const LoginModal: React.FC = () => {
                   Processing...
                 </span>
               ) : (
-                loginMode === 'admin' ? 'Admin Sign In' : isSignup ? 'Create Account' : 'Sign In'
+                loginMode === 'admin' ? 'Admin Sign In' : 'Sign In'
               )}
             </button>
           </form>
-
-          {loginMode === 'user' && (
-            <p className="text-center text-sm text-gray-500 mt-5">
-              {isSignup ? 'Already a member?' : "Don't have an account?"}{' '}
-              <button
-                onClick={() => { setIsSignup(!isSignup); setError(''); }}
-                className="text-blue-600 font-semibold hover:underline"
-              >
-                {isSignup ? 'Sign In' : 'Sign Up'}
-              </button>
-            </p>
-          )}
         </div>
       </div>
     </div>

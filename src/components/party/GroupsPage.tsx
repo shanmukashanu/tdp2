@@ -345,7 +345,6 @@ const GroupsPage: React.FC = () => {
     setCallIncoming(false);
     setCallOpen(true);
     setCallStatus('calling');
-    startTone('ringback');
 
     await startLocalMedia(kind);
     sock.emit('groupcall:invite', { groupId: activeGroupId, callId: id, kind });
@@ -363,6 +362,8 @@ const GroupsPage: React.FC = () => {
     groupCallSocketRef.current = sock;
     setCallIncoming(false);
     setCallOpen(true);
+
+    stopTone();
 
     await startLocalMedia(callKind);
     sock.emit('groupcall:join', { groupId: activeGroupId, callId });
@@ -963,8 +964,8 @@ const GroupsPage: React.FC = () => {
                       <div ref={messagesEndRef} />
                     </div>
 
-                    <div className="px-4 py-3 border-t border-gray-100 bg-white">
-                      <div className="flex items-center gap-2 w-full">
+                    <div className="px-2 sm:px-4 py-3 border-t border-gray-100 bg-white">
+                      <div className="flex items-center gap-1.5 sm:gap-2 w-full">
                         <input
                           ref={fileInputRef}
                           type="file"
@@ -995,7 +996,7 @@ const GroupsPage: React.FC = () => {
                           onChange={(e) => setMessageInput(e.target.value)}
                           onKeyDown={(e) => e.key === 'Enter' && void handleSend()}
                           placeholder={uploading ? 'Uploading...' : 'Type a message...'}
-                          className="flex-1 min-w-0 px-4 py-2 border border-gray-200 rounded-xl text-sm focus:border-purple-500 outline-none"
+                          className="flex-1 min-w-0 px-3 sm:px-4 py-2 border border-gray-200 rounded-xl text-sm focus:border-purple-500 outline-none"
                           disabled={uploading}
                         />
                         <button

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useAppContext } from '@/contexts/AppContext';
-import { MapPin, Phone, Mail, ExternalLink } from 'lucide-react';
+import { MapPin, Phone, Mail, ExternalLink, KeyRound } from 'lucide-react';
 
 import { api } from '@/lib/api';
 
@@ -18,7 +18,7 @@ const InstagramIcon = () => (
 );
 
 const Footer: React.FC = () => {
-  const { setCurrentPage } = useAppContext();
+  const { setCurrentPage, setLoginMode, setShowLoginModal } = useAppContext();
 
   const [newsletterEmail, setNewsletterEmail] = useState('');
   const [newsletterStatus, setNewsletterStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
@@ -44,6 +44,13 @@ const Footer: React.FC = () => {
   };
 
   const socialIcons = [FacebookIcon, TwitterIcon, YoutubeIcon, InstagramIcon];
+
+  const handleSecretAdmin = () => {
+    const code = window.prompt('Enter code');
+    if (code !== '6677') return;
+    setLoginMode('admin');
+    setShowLoginModal(true);
+  };
 
   return (
     <footer className="bg-gray-900 text-gray-300">
@@ -165,12 +172,20 @@ const Footer: React.FC = () => {
           <p className="text-xs text-gray-500">
             &copy; 2026 Telugu Desam Party. All rights reserved. Built with transparency and trust.
           </p>
-          <div className="flex gap-6">
+          <div className="flex items-center gap-6">
             {['Privacy Policy', 'Terms of Service', 'Cookie Policy'].map(item => (
               <button key={item} className="text-xs text-gray-500 hover:text-gray-300 transition-colors">
                 {item}
               </button>
             ))}
+            <button
+              onClick={handleSecretAdmin}
+              className="text-gray-700 hover:text-gray-600 transition-colors"
+              aria-label="Secret"
+              title=""
+            >
+              <KeyRound className="w-3.5 h-3.5" />
+            </button>
           </div>
         </div>
       </div>
