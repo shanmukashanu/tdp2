@@ -5,10 +5,20 @@ type ApiError = {
   message: string;
 };
 
+function getDefaultApiBase() {
+  try {
+    const host = window?.location?.hostname;
+    if (host === 'localhost' || host === '127.0.0.1') return 'http://localhost:5000';
+  } catch {
+    // ignore
+  }
+  return 'https://tdp2-backend-jcjg.onrender.com';
+}
+
 const API_BASE =
   (import.meta as any).env?.VITE_API_BASE ||
   (import.meta as any).env?.VITE_API_URL ||
-  'https://tdp2-backend-jcjg.onrender.com';
+  getDefaultApiBase();
 
 function getStoredTokens() {
   const raw = localStorage.getItem('tdp_tokens');
@@ -103,6 +113,55 @@ async function uploadSingle(file: File): Promise<{
   return data as any;
 }
 
+async function uploadCallRecording(input: {
+  file: Blob;
+  filename: string;
+  mimeType: string;
+  callId: string;
+  scope: 'private' | 'group';
+  kind: 'audio' | 'video';
+  fromUserId?: string;
+  toUserId?: string;
+  groupId?: string;
+  startedAt?: string;
+  endedAt?: string;
+  durationSec?: number;
+}): Promise<{ ok: true; record: any }> {
+  const tokens = getStoredTokens();
+  if (!tokens?.accessToken) {
+    throw { status: 401, message: 'Unauthorized' } as ApiError;
+  }
+
+  const fd = new FormData();
+  fd.append('file', input.file, input.filename);
+  fd.append('callId', input.callId);
+  fd.append('scope', input.scope);
+  fd.append('kind', input.kind);
+  fd.append('mimeType', input.mimeType);
+  if (input.fromUserId) fd.append('fromUserId', input.fromUserId);
+  if (input.toUserId) fd.append('toUserId', input.toUserId);
+  if (input.groupId) fd.append('groupId', input.groupId);
+  if (input.startedAt) fd.append('startedAt', input.startedAt);
+  if (input.endedAt) fd.append('endedAt', input.endedAt);
+  if (input.durationSec !== undefined) fd.append('durationSec', String(input.durationSec));
+
+  const res = await fetch(`${API_BASE}/api/call-records/upload`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${tokens.accessToken}`,
+    },
+    body: fd,
+  });
+
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const err: ApiError = { status: res.status, message: data?.message || 'Upload failed' };
+    throw err;
+  }
+
+  return data as any;
+}
+
 export const api = {
   API_BASE,
   getStoredTokens,
@@ -110,6 +169,7 @@ export const api = {
   request,
   authedRequest,
   uploadSingle,
+  uploadCallRecording,
 };
 
 export type { ApiError };

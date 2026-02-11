@@ -144,6 +144,13 @@ const MessagesPage: React.FC = () => {
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
 
+  const recCtxRef = useRef<AudioContext | null>(null);
+  const recDestRef = useRef<MediaStreamAudioDestinationNode | null>(null);
+  const recRecorderRef = useRef<MediaRecorder | null>(null);
+  const recChunksRef = useRef<BlobPart[]>([]);
+  const recStartedAtRef = useRef<number | null>(null);
+  const recUploadingRef = useRef(false);
+
   const callSocketRef = useRef<ReturnType<typeof connectSocket> | null>(null);
 
   const ringtoneRef = useRef<HTMLAudioElement | null>(null);
@@ -153,7 +160,112 @@ const MessagesPage: React.FC = () => {
     []
   );
 
+  const stopRecording = () => {
+    const recorder = recRecorderRef.current;
+    if (!recorder) return;
+
+    try {
+      if (recorder.state !== 'inactive') recorder.stop();
+    } catch {
+      // ignore
+    }
+  };
+
+  const startRecordingIfPossible = () => {
+    if (recRecorderRef.current) return;
+    if (!callId) return;
+
+    const local = localStreamRef.current;
+    const remote = remoteStreamRef.current;
+    const localTracks = local?.getAudioTracks?.() || [];
+    const remoteTracks = remote?.getAudioTracks?.() || [];
+    if (localTracks.length === 0 && remoteTracks.length === 0) return;
+
+    try {
+      const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+      const dest = ctx.createMediaStreamDestination();
+      recCtxRef.current = ctx;
+      recDestRef.current = dest;
+
+      for (const t of localTracks) {
+        const s = new MediaStream([t]);
+        const src = ctx.createMediaStreamSource(s);
+        src.connect(dest);
+      }
+      for (const t of remoteTracks) {
+        const s = new MediaStream([t]);
+        const src = ctx.createMediaStreamSource(s);
+        src.connect(dest);
+      }
+
+      const stream = dest.stream;
+      const preferred = 'audio/webm;codecs=opus';
+      const mimeType = (window as any).MediaRecorder?.isTypeSupported?.(preferred) ? preferred : 'audio/webm';
+      const recorder = new MediaRecorder(stream, { mimeType });
+      recRecorderRef.current = recorder;
+      recChunksRef.current = [];
+      recStartedAtRef.current = Date.now();
+
+      recorder.ondataavailable = (ev: BlobEvent) => {
+        if (ev.data && ev.data.size > 0) recChunksRef.current.push(ev.data);
+      };
+      recorder.onstop = async () => {
+        const chunks = recChunksRef.current;
+        recChunksRef.current = [];
+
+        const startedAt = recStartedAtRef.current;
+        recStartedAtRef.current = null;
+
+        try {
+          recDestRef.current = null;
+          if (recCtxRef.current) await recCtxRef.current.close();
+        } catch {
+          // ignore
+        }
+        recCtxRef.current = null;
+        recRecorderRef.current = null;
+
+        if (!chunks.length) return;
+        if (recUploadingRef.current) return;
+        if (!callId) return;
+        if (!user?.id) return;
+        if (!callOther?._id) return;
+
+        recUploadingRef.current = true;
+        try {
+          const endedAt = Date.now();
+          const durationSec = startedAt ? Math.max(0, Math.round((endedAt - startedAt) / 1000)) : undefined;
+          const blob = new Blob(chunks, { type: 'audio/webm' });
+
+          await api.uploadCallRecording({
+            file: blob,
+            filename: `call-${callId}.webm`,
+            mimeType: 'audio/webm',
+            callId,
+            scope: 'private',
+            kind: callKind,
+            fromUserId: String(user.id),
+            toUserId: String(callOther._id),
+            startedAt: startedAt ? new Date(startedAt).toISOString() : undefined,
+            endedAt: new Date(endedAt).toISOString(),
+            durationSec,
+          });
+        } catch {
+          // ignore
+        } finally {
+          recUploadingRef.current = false;
+        }
+      };
+
+      recorder.start(1000);
+    } catch {
+      // ignore
+    }
+  };
+
   const cleanupCall = () => {
+    stopRecording();
+
     if (ringtoneRef.current) {
       try {
         ringtoneRef.current.pause();
@@ -230,10 +342,12 @@ const MessagesPage: React.FC = () => {
       if (st === 'connected') {
         setCallStatus('connected');
         stopTone();
+        startRecordingIfPossible();
       } else if (st === 'connecting' || st === 'new') {
         setCallStatus('connecting');
       } else if (st === 'failed' || st === 'disconnected') {
         setCallStatus('ended');
+        stopRecording();
       }
     };
 
@@ -242,10 +356,12 @@ const MessagesPage: React.FC = () => {
       if (st === 'connected' || st === 'completed') {
         setCallStatus('connected');
         stopTone();
+        startRecordingIfPossible();
       } else if (st === 'checking') {
         setCallStatus('connecting');
       } else if (st === 'failed' || st === 'disconnected') {
         setCallStatus('ended');
+        stopRecording();
       }
     };
 

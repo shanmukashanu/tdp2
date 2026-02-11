@@ -29,6 +29,7 @@ const AdminDashboard: React.FC = () => {
 
   const [groupRequests, setGroupRequests] = useState<any[]>([]);
   const [communityMessages, setCommunityMessages] = useState<any[]>([]);
+  const [callRecords, setCallRecords] = useState<any[]>([]);
 
   const [adminChatUserQuery, setAdminChatUserQuery] = useState('');
   const [adminChatUsers, setAdminChatUsers] = useState<any[]>([]);
@@ -77,6 +78,7 @@ const AdminDashboard: React.FC = () => {
     { id: 'groups', label: 'Groups', icon: Users },
     { id: 'group-requests', label: 'Group Requests', icon: Shield },
     { id: 'community', label: 'Community', icon: Globe },
+    { id: 'call-records', label: 'Call Records', icon: Activity },
     { id: 'alerts', label: 'Alerts', icon: Bell },
     { id: 'reports', label: 'Reports', icon: Shield },
     { id: 'contacts', label: 'Contacts', icon: Bell },
@@ -138,6 +140,11 @@ const AdminDashboard: React.FC = () => {
       if (tabId === 'community') {
         const res = await api.authedRequest<{ ok: true; items: any[] }>('/api/messages/community?limit=200', 'GET');
         setCommunityMessages(res.items || []);
+      }
+
+      if (tabId === 'call-records') {
+        const res = await api.authedRequest<{ ok: true; items: any[] }>('/api/call-records?limit=200', 'GET');
+        setCallRecords(res.items || []);
       }
 
       if (tabId === 'alerts') {
@@ -303,6 +310,71 @@ const AdminDashboard: React.FC = () => {
       setLoadingAdminChat(false);
     }
   };
+
+  const renderCallRecords = () => (
+    <div>
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="text-lg font-bold text-gray-900">Call Records</h3>
+        <button
+          onClick={() => loadTabData('call-records')}
+          className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700"
+        >
+          <RefreshCw className="w-4 h-4" /> Refresh
+        </button>
+      </div>
+
+      <div className="space-y-3">
+        {callRecords.map((r) => {
+          const created = r?.createdAt ? new Date(r.createdAt) : null;
+          const uploaderName = r?.uploader?.name || 'Member';
+          const scope = r?.scope || 'private';
+          const kind = r?.kind || 'audio';
+          const url = r?.file?.url || '';
+          const duration = r?.durationSec ? `${r.durationSec}s` : '—';
+
+          return (
+            <div key={r._id} className="bg-white rounded-xl border border-gray-100 p-4 shadow-sm">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-sm font-bold text-gray-900 truncate">
+                    {scope.toUpperCase()} • {kind.toUpperCase()} • {duration}
+                  </p>
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    Uploaded by: {uploaderName}
+                    {created ? ` • ${created.toLocaleString()}` : ''}
+                  </p>
+                  <p className="text-[10px] text-gray-400 mt-1 break-all">CallId: {String(r.callId || '')}</p>
+                </div>
+                {url && (
+                  <a
+                    href={url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="flex items-center gap-2 px-3 py-2 bg-gray-100 text-gray-700 rounded-lg text-xs font-bold hover:bg-gray-200"
+                    title="Download"
+                  >
+                    <Download className="w-4 h-4" /> Download
+                  </a>
+                )}
+              </div>
+
+              {url && (
+                <div className="mt-3">
+                  <audio controls preload="none" className="w-full">
+                    <source src={url} />
+                  </audio>
+                </div>
+              )}
+            </div>
+          );
+        })}
+
+        {callRecords.length === 0 && (
+          <div className="bg-white rounded-xl border border-gray-100 p-6 text-sm text-gray-500">No recordings found.</div>
+        )}
+      </div>
+    </div>
+  );
 
   const openAdminChatThread = async (otherUserId: string) => {
     if (!adminChatTargetUserId) return;
@@ -1799,6 +1871,7 @@ const AdminDashboard: React.FC = () => {
       case 'groups': return renderGroups();
       case 'group-requests': return renderGroupRequests();
       case 'community': return renderCommunityModeration();
+      case 'call-records': return renderCallRecords();
       case 'alerts': return renderAlerts();
       case 'reports': return renderReports();
       case 'contacts': return renderContacts();
