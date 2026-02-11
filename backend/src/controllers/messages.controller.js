@@ -12,6 +12,18 @@ function normalizeLimit(limit) {
   return Math.min(200, l);
 }
 
+function sanitizeDeletedForUser(items, user) {
+  const isAdmin = user?.role === 'admin';
+  if (isAdmin) return items;
+  return (items || []).map((m) => {
+    if (!m?.deletedAt) return m;
+    const obj = m.toObject ? m.toObject() : { ...m };
+    obj.text = '';
+    obj.media = null;
+    return obj;
+  });
+}
+
 const listCommunityMessages = asyncHandler(async (req, res) => {
   const limit = normalizeLimit(req.query.limit);
 
@@ -20,7 +32,8 @@ const listCommunityMessages = asyncHandler(async (req, res) => {
     .sort({ createdAt: -1 })
     .limit(limit);
 
-  res.json({ ok: true, items: items.reverse() });
+  const out = sanitizeDeletedForUser(items.reverse(), req.user);
+  res.json({ ok: true, items: out });
 });
 
 const listGroupMessages = asyncHandler(async (req, res) => {
@@ -40,7 +53,8 @@ const listGroupMessages = asyncHandler(async (req, res) => {
     .sort({ createdAt: -1 })
     .limit(limit);
 
-  res.json({ ok: true, items: items.reverse() });
+  const out = sanitizeDeletedForUser(items.reverse(), req.user);
+  res.json({ ok: true, items: out });
 });
 
 const listPrivateMessages = asyncHandler(async (req, res) => {
@@ -63,12 +77,78 @@ const listPrivateMessages = asyncHandler(async (req, res) => {
     .sort({ createdAt: -1 })
     .limit(limit);
 
-  res.json({ ok: true, items: items.reverse() });
+  const out = sanitizeDeletedForUser(items.reverse(), req.user);
+  res.json({ ok: true, items: out });
+});
+
+const deletePrivateMessage = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const msg = await Message.findById(id);
+  if (!msg) throw new AppError('Message not found', 404);
+  if (msg.type !== 'private') throw new AppError('Invalid message type', 400);
+
+  const me = String(req.user._id);
+  const isParticipant = String(msg.from) === me || String(msg.to) === me;
+  if (!isParticipant && req.user.role !== 'admin') throw new AppError('Forbidden', 403);
+
+  if (req.user.role !== 'admin' && String(msg.from) !== me) throw new AppError('Forbidden', 403);
+
+  if (!msg.deletedAt) {
+    msg.deletedAt = new Date();
+    msg.deletedBy = req.user._id;
+    await msg.save();
+  }
+
+  res.json({ ok: true, message: msg });
+});
+
+const deleteGroupMessage = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const msg = await Message.findById(id);
+  if (!msg) throw new AppError('Message not found', 404);
+  if (msg.type !== 'group') throw new AppError('Invalid message type', 400);
+
+  const groupId = msg.group;
+  const group = await Group.findById(groupId).select('_id isPublic members createdBy');
+  if (!group) throw new AppError('Group not found', 404);
+
+  const me = String(req.user._id);
+  const isMember = (group.members || []).some((m) => String(m.user) === me);
+  if (!group.isPublic && !isMember && req.user.role !== 'admin') throw new AppError('Forbidden', 403);
+
+  if (req.user.role !== 'admin' && String(msg.from) !== me) throw new AppError('Forbidden', 403);
+
+  if (!msg.deletedAt) {
+    msg.deletedAt = new Date();
+    msg.deletedBy = req.user._id;
+    await msg.save();
+  }
+
+  res.json({ ok: true, message: msg });
+});
+
+const deleteCommunityMessage = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const msg = await CommunityMessage.findById(id);
+  if (!msg) throw new AppError('Message not found', 404);
+
+  const me = String(req.user._id);
+  if (req.user.role !== 'admin' && String(msg.from) !== me) throw new AppError('Forbidden', 403);
+
+  if (!msg.deletedAt) {
+    msg.deletedAt = new Date();
+    msg.deletedBy = req.user._id;
+    await msg.save();
+  }
+
+  res.json({ ok: true, message: msg });
 });
 
 const listConversations = asyncHandler(async (req, res) => {
   const userId = String(req.user._id);
   const limit = normalizeLimit(req.query.limit);
+
+  const isAdmin = req.user?.role === 'admin';
 
   // Recent private messages involving the user
   const privateMsgs = await Message.find({
@@ -103,8 +183,8 @@ const listConversations = asyncHandler(async (req, res) => {
         otherUser: other,
         lastMessage: {
           _id: last._id,
-          text: last.text,
-          media: last.media,
+          text: !isAdmin && last.deletedAt ? '' : last.text,
+          media: !isAdmin && last.deletedAt ? null : last.media,
           from: last.from,
           createdAt: last.createdAt,
         },
@@ -120,4 +200,7 @@ module.exports = {
   listGroupMessages,
   listPrivateMessages,
   listConversations,
+  deletePrivateMessage,
+  deleteGroupMessage,
+  deleteCommunityMessage,
 };

@@ -200,14 +200,14 @@ const MembersPage: React.FC = () => {
       {selectedMember && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setSelectedMember(null)} />
-          <div className="relative w-full max-w-md bg-white rounded-2xl shadow-2xl overflow-hidden">
-            <div className="h-24 bg-gradient-to-r from-blue-600 to-blue-800 relative">
+          <div className="relative w-full max-w-md bg-white rounded-2xl shadow-2xl">
+            <div className="h-24 bg-gradient-to-r from-blue-600 to-blue-800 relative overflow-hidden rounded-t-2xl z-0">
               <button onClick={() => setSelectedMember(null)} className="absolute top-3 right-3 p-1.5 bg-white/20 rounded-lg hover:bg-white/30 transition-colors">
                 <X className="w-4 h-4 text-white" />
               </button>
             </div>
             <div className="px-6 pb-6">
-              <div className="-mt-10 mb-4">
+              <div className="relative -mt-10 mb-4 z-10">
                 {selectedMember.profilePicture ? (
                   <div className="w-20 h-20 rounded-2xl overflow-hidden border-4 border-white shadow-lg bg-white">
                     <img

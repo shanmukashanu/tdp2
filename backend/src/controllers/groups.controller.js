@@ -66,6 +66,9 @@ const requestAccess = asyncHandler(async (req, res) => {
   const group = await Group.findById(id);
   if (!group) throw new AppError('Group not found', 404);
 
+  const isBlocked = (group.blockedUsers || []).some((u) => String(u) === String(req.user._id));
+  if (isBlocked) throw new AppError('You are blocked from this group', 403);
+
   if (group.isPublic) {
     return res.status(400).json({ ok: false, message: 'Group is public; join directly' });
   }
@@ -85,6 +88,58 @@ const requestAccess = asyncHandler(async (req, res) => {
     .populate('joinRequests.user', 'name membershipId profilePicture role status');
 
   res.json({ ok: true, group: populated });
+});
+
+const blockJoinRequester = asyncHandler(async (req, res) => {
+  const { id, userId } = req.params;
+  const group = await Group.findById(id);
+  if (!group) throw new AppError('Group not found', 404);
+  if (!isGroupOwnerOrAdmin(group, req.user)) throw new AppError('Forbidden', 403);
+
+  const alreadyBlocked = (group.blockedUsers || []).some((u) => String(u) === String(userId));
+  if (!alreadyBlocked) group.blockedUsers.push(userId);
+
+  group.joinRequests = (group.joinRequests || []).filter((r) => String(r.user) !== String(userId));
+  await group.save();
+
+  const populated = await Group.findById(group._id)
+    .populate('createdBy', 'name membershipId profilePicture')
+    .populate('members.user', 'name membershipId profilePicture role status')
+    .populate('joinRequests.user', 'name membershipId profilePicture role status');
+
+  res.json({ ok: true, group: populated });
+});
+
+const listAllJoinRequestsAdmin = asyncHandler(async (req, res) => {
+  if (req.user.role !== 'admin') throw new AppError('Forbidden', 403);
+
+  const { q } = req.query;
+  const filter = { joinRequests: { $exists: true, $ne: [] } };
+  if (q) filter.$text = { $search: String(q) };
+
+  const groups = await Group.find(filter)
+    .select('name isPublic createdBy joinRequests blockedUsers createdAt')
+    .populate('createdBy', 'name membershipId profilePicture')
+    .populate('joinRequests.user', 'name membershipId profilePicture role status')
+    .sort({ createdAt: -1 });
+
+  const items = [];
+  for (const g of groups) {
+    for (const r of g.joinRequests || []) {
+      items.push({
+        group: { _id: g._id, name: g.name, isPublic: g.isPublic, createdBy: g.createdBy },
+        request: r,
+      });
+    }
+  }
+
+  items.sort((a, b) => {
+    const at = new Date(a.request.requestedAt || 0).getTime();
+    const bt = new Date(b.request.requestedAt || 0).getTime();
+    return bt - at;
+  });
+
+  res.json({ ok: true, items });
 });
 
 const listJoinRequests = asyncHandler(async (req, res) => {
@@ -145,6 +200,9 @@ const joinGroup = asyncHandler(async (req, res) => {
   const group = await Group.findById(id);
   if (!group) throw new AppError('Group not found', 404);
 
+  const isBlocked = (group.blockedUsers || []).some((u) => String(u) === String(req.user._id));
+  if (isBlocked) throw new AppError('You are blocked from this group', 403);
+
   const isMember = group.members.some((m) => String(m.user) === String(req.user._id));
   if (isMember) return res.json({ ok: true, group });
 
@@ -190,6 +248,8 @@ module.exports = {
   listJoinRequests,
   approveJoinRequest,
   denyJoinRequest,
+  blockJoinRequester,
+  listAllJoinRequestsAdmin,
   leaveGroup,
   deleteGroup,
 };

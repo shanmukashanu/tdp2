@@ -16,7 +16,13 @@ type ChatMessage = {
   text: string;
   media?: ChatMedia;
   createdAt: string;
+  deletedAt?: string | null;
+  deletedBy?: any;
 };
+
+function isDeletedMessage(msg: ChatMessage) {
+  return Boolean(msg?.deletedAt) || (!msg?.text && !msg?.media);
+}
 
 function renderMediaPreview(media: ChatMedia) {
   if (!media?.url) return null;
@@ -91,6 +97,27 @@ const CommunityPage: React.FC = () => {
       alive = false;
     };
   }, [canChat]);
+
+  const handleDeleteMessage = async (messageId: string) => {
+    if (!isAuthenticated) {
+      setShowLoginModal(true);
+      return;
+    }
+    setError('');
+    try {
+      const res = await api.authedRequest<{ ok: true; message: ChatMessage }>(`/api/messages/community/${messageId}`, 'DELETE');
+      const returned = res.message;
+      const isAdmin = user?.role === 'admin';
+      const sanitized: ChatMessage = {
+        ...returned,
+        text: !isAdmin && returned?.deletedAt ? '' : returned.text,
+        media: !isAdmin && returned?.deletedAt ? null : returned.media,
+      };
+      setMessages((prev) => prev.map((m) => (String(m._id) === String(messageId) ? { ...m, ...sanitized } : m)));
+    } catch (e: any) {
+      setError(e?.message || 'Delete failed');
+    }
+  };
 
   useEffect(() => {
     if (!canChat) return;
@@ -187,6 +214,9 @@ const CommunityPage: React.FC = () => {
               const senderId = msg?.from?._id || msg?.from;
               const isOwn = String(senderId) === String(user?.id);
               const senderName = msg?.from?.name || (isOwn ? 'You' : 'Member');
+              const isAdmin = user?.role === 'admin';
+              const canDelete = isAdmin || isOwn;
+              const deleted = !isAdmin && isDeletedMessage(msg);
               const time = msg?.createdAt ? new Date(msg.createdAt) : new Date();
 
               return (
@@ -195,19 +225,40 @@ const CommunityPage: React.FC = () => {
                     {!isOwn && (
                       <p className="text-[10px] text-gray-400 font-medium mb-1 ml-1">{senderName}</p>
                     )}
-                    <div className={`px-4 py-2.5 rounded-2xl text-sm ${
+                    <div className={`px-4 py-2.5 rounded-2xl text-sm relative group ${
                       isOwn
                         ? 'bg-green-600 text-white rounded-br-md'
                         : 'bg-white text-gray-800 rounded-bl-md border border-gray-100 shadow-sm'
                     }`}>
-                      {msg.text}
-                      {msg.media?.url && (
-                        <div className="mt-2">
-                          {renderMediaPreview(msg.media)}
-                          <a href={msg.media.url} target="_blank" rel="noreferrer" className={`block mt-1 text-xs underline ${isOwn ? 'text-white' : 'text-blue-600'}`}>
-                            Open
-                          </a>
-                        </div>
+                      {canDelete && (
+                        <button
+                          onClick={() => void handleDeleteMessage(msg._id)}
+                          className={`absolute -top-2 -right-2 p-1.5 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity ${
+                            isOwn ? 'bg-white/20 hover:bg-white/30' : 'bg-gray-100 hover:bg-gray-200'
+                          }`}
+                          title="Delete for everyone"
+                        >
+                          <span className={`text-[10px] font-black ${isOwn ? 'text-white' : 'text-gray-700'}`}>DEL</span>
+                        </button>
+                      )}
+
+                      {deleted ? (
+                        <span className={`${isOwn ? 'text-white/80' : 'text-gray-400'} italic`}>Message deleted</span>
+                      ) : (
+                        <>
+                          {isAdmin && msg?.deletedAt ? (
+                            <span className={`block text-[10px] font-bold mb-1 ${isOwn ? 'text-white/80' : 'text-gray-500'}`}>Deleted</span>
+                          ) : null}
+                          {msg.text}
+                          {msg.media?.url && (
+                            <div className="mt-2">
+                              {renderMediaPreview(msg.media)}
+                              <a href={msg.media.url} target="_blank" rel="noreferrer" className={`block mt-1 text-xs underline ${isOwn ? 'text-white' : 'text-blue-600'}`}>
+                                Open
+                              </a>
+                            </div>
+                          )}
+                        </>
                       )}
                     </div>
                     <p className={`text-[10px] text-gray-400 mt-1 ${isOwn ? 'text-right mr-1' : 'ml-1'}`}>

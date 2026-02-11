@@ -21,6 +21,9 @@ const MessageSchema = new mongoose.Schema(
 
     text: { type: String, default: '' },
     media: { type: MediaSchema, default: null },
+
+    deletedAt: { type: Date, default: null, index: true },
+    deletedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null, index: true },
   },
   { timestamps: true }
 );

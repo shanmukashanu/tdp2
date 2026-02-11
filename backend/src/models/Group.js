@@ -30,6 +30,7 @@ const GroupSchema = new mongoose.Schema(
     },
     members: { type: [GroupMemberSchema], default: [] },
     joinRequests: { type: [GroupJoinRequestSchema], default: [] },
+    blockedUsers: { type: [mongoose.Schema.Types.ObjectId], ref: 'User', default: [], index: true },
   },
   { timestamps: true }
 );

@@ -18,6 +18,8 @@ type ChatMessage = {
   text: string;
   media?: ChatMedia;
   createdAt: string;
+  deletedAt?: string | null;
+  deletedBy?: any;
 };
 
 type DirectoryUser = {
@@ -58,6 +60,10 @@ function inferMediaType(media?: ChatMedia): 'image' | 'video' | 'audio' | 'file'
   if (/(\.mp4|\.webm|\.mov|\.m4v|\.mkv)(\?|#|$)/.test(url)) return 'video';
   if (/(\.mp3|\.wav|\.m4a|\.aac|\.ogg)(\?|#|$)/.test(url)) return 'audio';
   return 'file';
+}
+
+function isDeletedMessage(msg: ChatMessage) {
+  return Boolean(msg?.deletedAt) || (!msg?.text && !msg?.media);
 }
 
 function renderMediaPreview(media: ChatMedia, isOwn: boolean) {
@@ -105,7 +111,7 @@ function renderMediaPreview(media: ChatMedia, isOwn: boolean) {
 }
 
 const MessagesPage: React.FC = () => {
-  const { user, isAuthenticated, setShowLoginModal, dmTargetUserId, setDmTargetUserId } = useAppContext();
+  const { setCurrentPage, isAuthenticated, setShowLoginModal, user, dmTargetUserId, setDmTargetUserId } = useAppContext();
   const [messageInput, setMessageInput] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [userSearch, setUserSearch] = useState('');
@@ -193,7 +199,7 @@ const MessagesPage: React.FC = () => {
 
   const startTone = (_mode: 'ring' | 'ringback') => {
     if (ringtoneRef.current) return;
-    const a = new Audio('/ringtone.mp3');
+    const a = new Audio(_mode === 'ring' ? '/ringtone.mp3' : '/ring.mp3');
     a.loop = true;
     ringtoneRef.current = a;
     a.play().catch(() => {
@@ -313,6 +319,7 @@ const MessagesPage: React.FC = () => {
     setCallIncoming(false);
     setCallOpen(true);
     setCallStatus('calling');
+    startTone('ringback');
 
     await startLocalMedia(kind);
     const pc = ensurePc(sock, id);
@@ -667,6 +674,27 @@ const MessagesPage: React.FC = () => {
     }
   };
 
+  const handleDeleteMessage = async (messageId: string) => {
+    if (!isAuthenticated) {
+      setShowLoginModal(true);
+      return;
+    }
+    setError('');
+    try {
+      const res = await api.authedRequest<{ ok: true; message: ChatMessage }>(`/api/messages/private/${messageId}`, 'DELETE');
+      const returned = res.message;
+      const isAdmin = user?.role === 'admin';
+      const sanitized: ChatMessage = {
+        ...returned,
+        text: !isAdmin && returned?.deletedAt ? '' : returned.text,
+        media: !isAdmin && returned?.deletedAt ? null : returned.media,
+      };
+      setMessages((prev) => prev.map((m) => (String(m._id) === String(messageId) ? { ...m, ...sanitized } : m)));
+    } catch (e: any) {
+      setError(e?.message || 'Delete failed');
+    }
+  };
+
   const getTypeIcon = (type: string) => {
     switch (type) {
       case 'community': return <Globe className="w-4 h-4" />;
@@ -821,6 +849,9 @@ const MessagesPage: React.FC = () => {
                     const senderId = String(msg?.from?._id || msg?.from);
                     const isOwn = senderId === String(user?.id);
                     const senderName = msg?.from?.name || (isOwn ? 'You' : 'Member');
+                    const isAdmin = user?.role === 'admin';
+                    const canDelete = isAdmin || isOwn;
+                    const deleted = !isAdmin && isDeletedMessage(msg);
                     const time = msg?.createdAt ? new Date(msg.createdAt) : new Date();
                     return (
                       <div key={msg._id} className={`flex ${isOwn ? 'justify-end' : 'justify-start'}`}>
@@ -828,13 +859,34 @@ const MessagesPage: React.FC = () => {
                           {!isOwn && (
                             <p className="text-[10px] text-gray-400 font-medium mb-1 ml-1">{senderName}</p>
                           )}
-                          <div className={`px-4 py-2.5 rounded-2xl text-sm ${
+                          <div className={`px-4 py-2.5 rounded-2xl text-sm relative group ${
                             isOwn
                               ? 'bg-blue-600 text-white rounded-br-md'
                               : 'bg-white text-gray-800 rounded-bl-md border border-gray-100 shadow-sm'
                           }`}>
-                            {msg.text}
-                            {msg.media?.url ? renderMediaPreview(msg.media, isOwn) : null}
+                            {canDelete && (
+                              <button
+                                onClick={() => void handleDeleteMessage(msg._id)}
+                                className={`absolute -top-2 -right-2 p-1.5 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity ${
+                                  isOwn ? 'bg-white/20 hover:bg-white/30' : 'bg-gray-100 hover:bg-gray-200'
+                                }`}
+                                title="Delete for everyone"
+                              >
+                                <span className={`text-[10px] font-black ${isOwn ? 'text-white' : 'text-gray-700'}`}>DEL</span>
+                              </button>
+                            )}
+
+                            {deleted ? (
+                              <span className={`${isOwn ? 'text-white/80' : 'text-gray-400'} italic`}>Message deleted</span>
+                            ) : (
+                              <>
+                                {isAdmin && msg?.deletedAt ? (
+                                  <span className={`block text-[10px] font-bold mb-1 ${isOwn ? 'text-white/80' : 'text-gray-500'}`}>Deleted</span>
+                                ) : null}
+                                {msg.text}
+                                {msg.media?.url ? renderMediaPreview(msg.media, isOwn) : null}
+                              </>
+                            )}
                           </div>
                           <p className={`text-[10px] text-gray-400 mt-1 ${isOwn ? 'text-right mr-1' : 'ml-1'}`}>
                             {time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}

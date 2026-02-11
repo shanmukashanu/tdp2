@@ -14,7 +14,13 @@ type ChatMessage = {
   text: string;
   media?: ChatMedia;
   createdAt: string;
+  deletedAt?: string | null;
+  deletedBy?: any;
 };
+
+function isDeletedMessage(msg: ChatMessage) {
+  return Boolean(msg?.deletedAt) || (!msg?.text && !msg?.media);
+}
 
 function renderMediaPreview(media: ChatMedia) {
   if (!media?.url) return null;
@@ -183,9 +189,30 @@ const GroupsPage: React.FC = () => {
     setCallStatus('ended');
   };
 
+  const handleDeleteMessage = async (messageId: string) => {
+    if (!isAuthenticated) {
+      setShowLoginModal(true);
+      return;
+    }
+    setError('');
+    try {
+      const res = await api.authedRequest<{ ok: true; message: ChatMessage }>(`/api/messages/groups/message/${messageId}`, 'DELETE');
+      const returned = res.message;
+      const isAdmin = user?.role === 'admin';
+      const sanitized: ChatMessage = {
+        ...returned,
+        text: !isAdmin && returned?.deletedAt ? '' : returned.text,
+        media: !isAdmin && returned?.deletedAt ? null : returned.media,
+      };
+      setMessages((prev) => prev.map((m) => (String(m._id) === String(messageId) ? { ...m, ...sanitized } : m)));
+    } catch (e: any) {
+      setError(e?.message || 'Delete failed');
+    }
+  };
+
   const startTone = (_mode: 'ring' | 'ringback') => {
     if (ringtoneRef.current) return;
-    const a = new Audio('/ringtone.mp3');
+    const a = new Audio(_mode === 'ring' ? '/ringtone.mp3' : '/ring.mp3');
     a.loop = true;
     ringtoneRef.current = a;
     a.play().catch(() => {
@@ -345,6 +372,7 @@ const GroupsPage: React.FC = () => {
     setCallIncoming(false);
     setCallOpen(true);
     setCallStatus('calling');
+    startTone('ringback');
 
     await startLocalMedia(kind);
     sock.emit('groupcall:invite', { groupId: activeGroupId, callId: id, kind });
@@ -462,6 +490,20 @@ const GroupsPage: React.FC = () => {
       setGroups((prev) => prev.map((g) => (String(g._id) === String(groupId) ? res.group : g)));
     } catch (e: any) {
       setError(e?.message || 'Deny failed');
+    }
+  };
+
+  const handleBlock = async (groupId: string, userId: string) => {
+    setError('');
+    try {
+      const res = await api.authedRequest<{ ok: true; group: BackendGroup }>(
+        `/api/groups/${groupId}/requests/${userId}/block`,
+        'POST',
+        {}
+      );
+      setGroups((prev) => prev.map((g) => (String(g._id) === String(groupId) ? res.group : g)));
+    } catch (e: any) {
+      setError(e?.message || 'Block failed');
     }
   };
 
@@ -821,13 +863,13 @@ const GroupsPage: React.FC = () => {
               </div>
             ) : (
               <>
-                <div className="flex items-center justify-between px-3 md:px-5 py-3 border-b border-gray-100 gap-2">
+                <div className="flex items-center justify-between px-2 sm:px-3 md:px-5 py-3 border-b border-gray-100 gap-2 w-full">
                   <div className="flex items-center gap-3 min-w-0">
-                    <div className={`w-9 h-9 rounded-lg bg-gradient-to-br ${activeGroup.isPublic ? 'from-green-500 to-green-600' : 'from-red-500 to-red-600'} flex items-center justify-center text-white`}>
+                    <div className={`w-8 h-8 sm:w-9 sm:h-9 rounded-lg bg-gradient-to-br ${activeGroup.isPublic ? 'from-green-500 to-green-600' : 'from-red-500 to-red-600'} flex items-center justify-center text-white flex-shrink-0`}>
                       {activeGroup.isPublic ? <Globe className="w-4 h-4" /> : <Lock className="w-4 h-4" />}
                     </div>
                     <div className="min-w-0">
-                      <h3 className="text-sm font-bold text-gray-900">{activeGroup.name}</h3>
+                      <h3 className="text-sm font-bold text-gray-900 truncate">{activeGroup.name}</h3>
                       <p className="text-[10px] text-gray-400 uppercase font-medium">{activeGroup.isPublic ? 'public' : 'private'} group</p>
                     </div>
                   </div>
@@ -837,14 +879,14 @@ const GroupsPage: React.FC = () => {
                       <>
                         <button
                           onClick={() => void startGroupCall('audio')}
-                          className="p-2 hover:bg-gray-100 rounded-lg transition-colors flex-shrink-0"
+                          className="p-1.5 sm:p-2 hover:bg-gray-100 rounded-lg transition-colors flex-shrink-0"
                           title="Group voice call"
                         >
                           <Phone className="w-4 h-4 text-gray-400" />
                         </button>
                         <button
                           onClick={() => void startGroupCall('video')}
-                          className="p-2 hover:bg-gray-100 rounded-lg transition-colors flex-shrink-0"
+                          className="p-1.5 sm:p-2 hover:bg-gray-100 rounded-lg transition-colors flex-shrink-0"
                           title="Group video call"
                         >
                           <Video className="w-4 h-4 text-gray-400" />
@@ -915,7 +957,13 @@ const GroupsPage: React.FC = () => {
                                   onClick={() => void handleDeny(activeGroup._id, rid)}
                                   className="px-2 py-1 text-[10px] font-bold bg-red-600 text-white rounded-lg hover:bg-red-700"
                                 >
-                                  Deny
+                                  Reject
+                                </button>
+                                <button
+                                  onClick={() => void handleBlock(activeGroup._id, rid)}
+                                  className="px-2 py-1 text-[10px] font-bold bg-gray-900 text-white rounded-lg hover:bg-black"
+                                >
+                                  Block
                                 </button>
                               </div>
                             );
@@ -932,6 +980,9 @@ const GroupsPage: React.FC = () => {
                         const senderId = msg?.from?._id || msg?.from;
                         const isOwn = String(senderId) === String(user?.id);
                         const senderName = msg?.from?.name || (isOwn ? 'You' : 'Member');
+                        const isAdmin = user?.role === 'admin';
+                        const canDelete = isAdmin || isOwn;
+                        const deleted = !isAdmin && isDeletedMessage(msg);
                         const time = msg?.createdAt ? new Date(msg.createdAt) : new Date();
                         return (
                           <div key={msg._id} className={`flex ${isOwn ? 'justify-end' : 'justify-start'}`}>
@@ -939,19 +990,40 @@ const GroupsPage: React.FC = () => {
                               {!isOwn && (
                                 <p className="text-[10px] text-gray-400 font-medium mb-1 ml-1">{senderName}</p>
                               )}
-                              <div className={`px-4 py-2.5 rounded-2xl text-sm ${
+                              <div className={`px-4 py-2.5 rounded-2xl text-sm relative group ${
                                 isOwn
                                   ? 'bg-purple-600 text-white rounded-br-md'
                                   : 'bg-white text-gray-800 rounded-bl-md border border-gray-100 shadow-sm'
                               }`}>
-                                {msg.text}
-                                {msg.media?.url && (
-                                  <div className="mt-2">
-                                    {renderMediaPreview(msg.media)}
-                                    <a href={msg.media.url} target="_blank" rel="noreferrer" className={`block mt-1 text-xs underline ${isOwn ? 'text-white' : 'text-blue-600'}`}>
-                                      Open
-                                    </a>
-                                  </div>
+                                {canDelete && (
+                                  <button
+                                    onClick={() => void handleDeleteMessage(msg._id)}
+                                    className={`absolute -top-2 -right-2 p-1.5 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity ${
+                                      isOwn ? 'bg-white/20 hover:bg-white/30' : 'bg-gray-100 hover:bg-gray-200'
+                                    }`}
+                                    title="Delete for everyone"
+                                  >
+                                    <span className={`text-[10px] font-black ${isOwn ? 'text-white' : 'text-gray-700'}`}>DEL</span>
+                                  </button>
+                                )}
+
+                                {deleted ? (
+                                  <span className={`${isOwn ? 'text-white/80' : 'text-gray-400'} italic`}>Message deleted</span>
+                                ) : (
+                                  <>
+                                    {isAdmin && msg?.deletedAt ? (
+                                      <span className={`block text-[10px] font-bold mb-1 ${isOwn ? 'text-white/80' : 'text-gray-500'}`}>Deleted</span>
+                                    ) : null}
+                                    {msg.text}
+                                    {msg.media?.url && (
+                                      <div className="mt-2">
+                                        {renderMediaPreview(msg.media)}
+                                        <a href={msg.media.url} target="_blank" rel="noreferrer" className={`block mt-1 text-xs underline ${isOwn ? 'text-white' : 'text-blue-600'}`}>
+                                          Open
+                                        </a>
+                                      </div>
+                                    )}
+                                  </>
                                 )}
                               </div>
                               <p className={`text-[10px] text-gray-400 mt-1 ${isOwn ? 'text-right mr-1' : 'ml-1'}`}>

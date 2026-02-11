@@ -4,13 +4,13 @@ import AIInsightBanner from './AIInsightBanner';
 import {
   Users, FileText, BarChart3, Briefcase, MessageCircle, Shield, Bell,
   TrendingUp, TrendingDown, Eye, Trash2, Ban, CheckCircle, XCircle,
-  Search, Filter, Download, RefreshCw, AlertTriangle, Activity, Mail
+  Search, Filter, Download, RefreshCw, AlertTriangle, Activity, Mail, Globe
 } from 'lucide-react';
 import { api } from '@/lib/api';
 
 const AdminDashboard: React.FC = () => {
   const { currentPage, setCurrentPage } = useAppContext();
-  const [activeTab, setActiveTab] = useState(currentPage === 'admin-dashboard' ? 'overview' : currentPage.replace('admin-', ''));
+  const [activeTab, setActiveTab] = useState(currentPage === 'admin-dashboard' ? 'users' : currentPage.replace('admin-', ''));
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -26,6 +26,9 @@ const AdminDashboard: React.FC = () => {
   const [contacts, setContacts] = useState<any[]>([]);
   const [subscribers, setSubscribers] = useState<any[]>([]);
   const [blogComments, setBlogComments] = useState<any[]>([]);
+
+  const [groupRequests, setGroupRequests] = useState<any[]>([]);
+  const [communityMessages, setCommunityMessages] = useState<any[]>([]);
 
   const [adminChatUserQuery, setAdminChatUserQuery] = useState('');
   const [adminChatUsers, setAdminChatUsers] = useState<any[]>([]);
@@ -65,7 +68,6 @@ const AdminDashboard: React.FC = () => {
   const [alertMessage, setAlertMessage] = useState('');
 
   const tabs = [
-    { id: 'overview', label: 'Overview', icon: Activity },
     { id: 'users', label: 'Users', icon: Users },
     { id: 'blogs', label: 'Blogs', icon: FileText },
     { id: 'comments', label: 'Comments', icon: MessageCircle },
@@ -73,6 +75,8 @@ const AdminDashboard: React.FC = () => {
     { id: 'surveys', label: 'Surveys', icon: BarChart3 },
     { id: 'works', label: 'Works', icon: Briefcase },
     { id: 'groups', label: 'Groups', icon: Users },
+    { id: 'group-requests', label: 'Group Requests', icon: Shield },
+    { id: 'community', label: 'Community', icon: Globe },
     { id: 'alerts', label: 'Alerts', icon: Bell },
     { id: 'reports', label: 'Reports', icon: Shield },
     { id: 'contacts', label: 'Contacts', icon: Bell },
@@ -83,7 +87,7 @@ const AdminDashboard: React.FC = () => {
   React.useEffect(() => {
     if (currentPage.startsWith('admin-')) {
       const tab = currentPage.replace('admin-', '');
-      setActiveTab(tab === 'dashboard' ? 'overview' : tab);
+      setActiveTab(tab === 'dashboard' ? 'users' : tab);
     }
   }, [currentPage]);
 
@@ -122,8 +126,18 @@ const AdminDashboard: React.FC = () => {
       }
 
       if (tabId === 'groups') {
-        const res = await api.request<{ ok: true; items: any[] }>('/api/groups?limit=50', 'GET');
+        const res = await api.authedRequest<{ ok: true; items: any[] }>('/api/groups?limit=200', 'GET');
         setGroups(res.items || []);
+      }
+
+      if (tabId === 'group-requests') {
+        const res = await api.authedRequest<{ ok: true; items: any[] }>('/api/groups/requests', 'GET');
+        setGroupRequests(res.items || []);
+      }
+
+      if (tabId === 'community') {
+        const res = await api.authedRequest<{ ok: true; items: any[] }>('/api/messages/community?limit=200', 'GET');
+        setCommunityMessages(res.items || []);
       }
 
       if (tabId === 'alerts') {
@@ -151,6 +165,62 @@ const AdminDashboard: React.FC = () => {
       setLoading(false);
     }
   }, []);
+
+  const handleApproveGroupRequest = async (groupId: string, userId: string) => {
+    setError('');
+    setLoading(true);
+    try {
+      await api.authedRequest(`/api/groups/${groupId}/requests/${userId}/approve`, 'POST', {});
+      const res = await api.authedRequest<{ ok: true; items: any[] }>('/api/groups/requests', 'GET');
+      setGroupRequests(res.items || []);
+    } catch (e: any) {
+      setError(e?.message || 'Approve failed');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleRejectGroupRequest = async (groupId: string, userId: string) => {
+    setError('');
+    setLoading(true);
+    try {
+      await api.authedRequest(`/api/groups/${groupId}/requests/${userId}`, 'DELETE');
+      const res = await api.authedRequest<{ ok: true; items: any[] }>('/api/groups/requests', 'GET');
+      setGroupRequests(res.items || []);
+    } catch (e: any) {
+      setError(e?.message || 'Reject failed');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleBlockGroupRequest = async (groupId: string, userId: string) => {
+    setError('');
+    setLoading(true);
+    try {
+      await api.authedRequest(`/api/groups/${groupId}/requests/${userId}/block`, 'POST', {});
+      const res = await api.authedRequest<{ ok: true; items: any[] }>('/api/groups/requests', 'GET');
+      setGroupRequests(res.items || []);
+    } catch (e: any) {
+      setError(e?.message || 'Block failed');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDeleteCommunityMessageAdmin = async (messageId: string) => {
+    setError('');
+    setLoading(true);
+    try {
+      await api.authedRequest(`/api/messages/community/${messageId}`, 'DELETE');
+      const res = await api.authedRequest<{ ok: true; items: any[] }>('/api/messages/community?limit=200', 'GET');
+      setCommunityMessages(res.items || []);
+    } catch (e: any) {
+      setError(e?.message || 'Delete failed');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleUpdateContactStatus = async (id: string, status: 'new' | 'in_progress' | 'closed') => {
     setError('');
@@ -193,7 +263,7 @@ const AdminDashboard: React.FC = () => {
 
   React.useEffect(() => {
     if (!activeTab) return;
-    if (activeTab === 'overview' || activeTab === 'dashboard' || activeTab === 'chats') return;
+    if (activeTab === 'dashboard' || activeTab === 'chats') return;
     loadTabData(activeTab);
   }, [activeTab, loadTabData]);
 
@@ -694,6 +764,143 @@ const AdminDashboard: React.FC = () => {
             ))}
           </div>
         </div>
+      </div>
+    </div>
+  );
+
+  const renderGroupRequests = () => (
+    <div>
+      <div className="flex items-center justify-between gap-3 mb-4">
+        <h3 className="text-lg font-bold text-gray-900">Group Access Requests</h3>
+        <button
+          disabled={loading}
+          onClick={() => void loadTabData('group-requests')}
+          className="px-3 py-2 rounded-lg border border-gray-200 text-sm font-bold hover:bg-gray-50 disabled:opacity-50"
+        >
+          Refresh
+        </button>
+      </div>
+
+      <div className="bg-white rounded-xl border border-gray-100 overflow-hidden shadow-sm">
+        <table className="w-full">
+          <thead className="bg-gray-50 border-b border-gray-100">
+            <tr>
+              {['Group', 'Requester', 'Requested At', 'Actions'].map((h) => (
+                <th key={h} className="text-left px-4 py-3 text-xs font-bold text-gray-500 uppercase">{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {(groupRequests || []).map((it) => {
+              const groupId = String(it?.group?._id || '');
+              const groupName = String(it?.group?.name || '—');
+              const rUser = it?.request?.user;
+              const userId = String(rUser?._id || it?.request?.user || '');
+              const userName = String(rUser?.name || '—');
+              const requestedAt = String(it?.request?.requestedAt || '').slice(0, 19).replace('T', ' ');
+              return (
+                <tr key={`${groupId}:${userId}`} className="border-b border-gray-50 hover:bg-gray-50">
+                  <td className="px-4 py-3 text-sm font-semibold text-gray-900">{groupName}</td>
+                  <td className="px-4 py-3 text-sm text-gray-700">{userName}</td>
+                  <td className="px-4 py-3 text-sm text-gray-500">{requestedAt || '—'}</td>
+                  <td className="px-4 py-3">
+                    <div className="flex gap-1">
+                      <button
+                        disabled={loading}
+                        onClick={() => void handleApproveGroupRequest(groupId, userId)}
+                        className="px-3 py-1.5 text-xs font-black bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50"
+                      >
+                        Accept
+                      </button>
+                      <button
+                        disabled={loading}
+                        onClick={() => void handleRejectGroupRequest(groupId, userId)}
+                        className="px-3 py-1.5 text-xs font-black bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50"
+                      >
+                        Reject
+                      </button>
+                      <button
+                        disabled={loading}
+                        onClick={() => void handleBlockGroupRequest(groupId, userId)}
+                        className="px-3 py-1.5 text-xs font-black bg-gray-900 text-white rounded-lg hover:bg-black disabled:opacity-50"
+                      >
+                        Block
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
+
+            {(groupRequests || []).length === 0 && (
+              <tr>
+                <td colSpan={4} className="px-4 py-10 text-center text-sm text-gray-500">No pending requests</td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+
+  const renderCommunityModeration = () => (
+    <div>
+      <div className="flex items-center justify-between gap-3 mb-4">
+        <h3 className="text-lg font-bold text-gray-900">Community Moderation</h3>
+        <button
+          disabled={loading}
+          onClick={() => void loadTabData('community')}
+          className="px-3 py-2 rounded-lg border border-gray-200 text-sm font-bold hover:bg-gray-50 disabled:opacity-50"
+        >
+          Refresh
+        </button>
+      </div>
+
+      <div className="bg-white rounded-xl border border-gray-100 overflow-hidden shadow-sm">
+        <table className="w-full">
+          <thead className="bg-gray-50 border-b border-gray-100">
+            <tr>
+              {['From', 'Message', 'Created', 'Status', 'Actions'].map((h) => (
+                <th key={h} className="text-left px-4 py-3 text-xs font-bold text-gray-500 uppercase">{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {(communityMessages || []).map((m) => {
+              const fromName = String(m?.from?.name || 'Member');
+              const created = String(m?.createdAt || '').slice(0, 19).replace('T', ' ');
+              const isDeleted = Boolean(m?.deletedAt);
+              return (
+                <tr key={m._id} className="border-b border-gray-50 hover:bg-gray-50">
+                  <td className="px-4 py-3 text-sm font-medium text-gray-900">{fromName}</td>
+                  <td className="px-4 py-3 text-sm text-gray-700 max-w-[520px] truncate">{String(m?.text || '')}</td>
+                  <td className="px-4 py-3 text-sm text-gray-500">{created || '—'}</td>
+                  <td className="px-4 py-3">
+                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                      isDeleted ? 'bg-gray-100 text-gray-700' : 'bg-green-100 text-green-700'
+                    }`}>{isDeleted ? 'deleted' : 'active'}</span>
+                  </td>
+                  <td className="px-4 py-3">
+                    <button
+                      disabled={loading}
+                      onClick={() => void handleDeleteCommunityMessageAdmin(m._id)}
+                      className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-50"
+                      title="Delete"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </td>
+                </tr>
+              );
+            })}
+
+            {(communityMessages || []).length === 0 && (
+              <tr>
+                <td colSpan={5} className="px-4 py-10 text-center text-sm text-gray-500">No messages found</td>
+              </tr>
+            )}
+          </tbody>
+        </table>
       </div>
     </div>
   );
@@ -1460,37 +1667,72 @@ const AdminDashboard: React.FC = () => {
         </button>
       </div>
 
+      <div className="bg-white rounded-xl border border-gray-100 p-4 shadow-sm mb-4">
+        <div className="grid md:grid-cols-2 gap-3">
+          <input
+            value={alertTitle}
+            onChange={(e) => setAlertTitle(e.target.value)}
+            placeholder="Alert title"
+            className="px-3 py-2 border border-gray-200 rounded-lg text-sm"
+          />
+          <input
+            value={alertMessage}
+            onChange={(e) => setAlertMessage(e.target.value)}
+            placeholder="Alert message"
+            className="px-3 py-2 border border-gray-200 rounded-lg text-sm"
+          />
+        </div>
+        <div className="mt-3 flex justify-end">
+          <button
+            disabled={loading}
+            onClick={() => void handleCreateAlert()}
+            className="px-4 py-2 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700 disabled:opacity-50"
+          >
+            Create Alert
+          </button>
+        </div>
+      </div>
+
       <div className="bg-white rounded-xl border border-gray-100 overflow-hidden shadow-sm">
         <table className="w-full">
           <thead className="bg-gray-50 border-b border-gray-100">
             <tr>
-              {['Type', 'Reporter', 'Target', 'Status', 'Date', 'Actions'].map(h => (
+              {['Title', 'Message', 'Active', 'Starts', 'Expires', 'Created', 'Actions'].map(h => (
                 <th key={h} className="text-left px-4 py-3 text-xs font-bold text-gray-500 uppercase">{h}</th>
               ))}
             </tr>
           </thead>
           <tbody>
-            {reports.map((r) => (
-              <tr key={r._id} className="border-b border-gray-50 hover:bg-gray-50">
-                <td className="px-4 py-3 text-sm font-medium text-gray-900">{r.targetType || 'Other'}</td>
-                <td className="px-4 py-3 text-sm text-gray-500">{r?.reporter?.name || '—'}</td>
-                <td className="px-4 py-3 text-sm text-gray-500">{String(r.targetId)}</td>
+            {alerts.map((a) => (
+              <tr key={a._id} className="border-b border-gray-50 hover:bg-gray-50">
+                <td className="px-4 py-3 text-sm font-medium text-gray-900">{a.title}</td>
+                <td className="px-4 py-3 text-sm text-gray-500 max-w-[520px] truncate">{a.message}</td>
                 <td className="px-4 py-3">
                   <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                    r.status === 'open' ? 'bg-yellow-100 text-yellow-700' :
-                    r.status === 'resolved' ? 'bg-green-100 text-green-700' :
-                    'bg-gray-100 text-gray-700'
-                  }`}>{r.status}</span>
+                    a.isActive ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'
+                  }`}>{a.isActive ? 'active' : 'inactive'}</span>
                 </td>
-                <td className="px-4 py-3 text-sm text-gray-500">{String(r.createdAt || '').slice(0, 10)}</td>
+                <td className="px-4 py-3 text-sm text-gray-500">{String(a.startsAt || '').slice(0, 10) || '—'}</td>
+                <td className="px-4 py-3 text-sm text-gray-500">{a.expiresAt ? String(a.expiresAt || '').slice(0, 10) : '—'}</td>
+                <td className="px-4 py-3 text-sm text-gray-500">{String(a.createdAt || '').slice(0, 10)}</td>
                 <td className="px-4 py-3">
-                  <div className="flex gap-1">
-                    <button disabled={loading} onClick={() => handleReport(r._id, 'resolve')} className="p-1.5 hover:bg-green-50 rounded-lg disabled:opacity-50" title="Resolve"><CheckCircle className="w-3.5 h-3.5 text-green-500" /></button>
-                    <button disabled={loading} onClick={() => handleReport(r._id, 'ignore')} className="p-1.5 hover:bg-red-50 rounded-lg disabled:opacity-50" title="Dismiss"><XCircle className="w-3.5 h-3.5 text-red-500" /></button>
-                  </div>
+                  <button
+                    disabled={loading}
+                    onClick={() => void handleDeleteAlert(a._id)}
+                    className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-50"
+                    title="Delete"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
                 </td>
               </tr>
             ))}
+
+            {alerts.length === 0 && (
+              <tr>
+                <td colSpan={7} className="px-4 py-10 text-center text-sm text-gray-500">No alerts found</td>
+              </tr>
+            )}
           </tbody>
         </table>
       </div>
@@ -1542,12 +1784,12 @@ const AdminDashboard: React.FC = () => {
       return <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-600">{error}</div>;
     }
 
-    if (loading && activeTab !== 'overview') {
+    if (loading) {
       return <div className="text-center py-12"><p className="text-gray-500 font-medium">Loading...</p></div>;
     }
 
     switch (activeTab) {
-      case 'overview': case 'dashboard': return renderOverview();
+      case 'dashboard': return renderUsers();
       case 'users': return renderUsers();
       case 'blogs': return renderBlogs();
       case 'comments': return renderComments();
@@ -1555,6 +1797,8 @@ const AdminDashboard: React.FC = () => {
       case 'surveys': return renderSurveys();
       case 'works': return renderWorks();
       case 'groups': return renderGroups();
+      case 'group-requests': return renderGroupRequests();
+      case 'community': return renderCommunityModeration();
       case 'alerts': return renderAlerts();
       case 'reports': return renderReports();
       case 'contacts': return renderContacts();
@@ -1562,7 +1806,7 @@ const AdminDashboard: React.FC = () => {
         return renderNewsletter();
       case 'chats':
         return renderChats();
-      default: return renderOverview();
+      default: return renderUsers();
     }
   };
 
@@ -1575,27 +1819,37 @@ const AdminDashboard: React.FC = () => {
 
       <AIInsightBanner text="Data analytics and moderation help leadership take informed actions. Real-time insights enable proactive governance and community management." />
 
-      {/* Tabs */}
-      <div className="flex gap-1 mb-6 overflow-x-auto pb-2 -mx-4 px-4">
-        {tabs.map(tab => {
-          const Icon = tab.icon;
-          return (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-medium whitespace-nowrap transition-all ${
-                activeTab === tab.id
-                  ? 'bg-blue-600 text-white shadow-md'
-                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-              }`}
-            >
-              <Icon className="w-3.5 h-3.5" /> {tab.label}
-            </button>
-          );
-        })}
-      </div>
+      <div className="grid lg:grid-cols-12 gap-6">
+        <div className="lg:col-span-3">
+          <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
+            <div className="px-4 py-3 border-b border-gray-100">
+              <p className="text-xs font-bold text-gray-500 uppercase">Sections</p>
+            </div>
+            <div className="p-2">
+              {tabs.map((tab) => {
+                const Icon = tab.icon;
+                const active = activeTab === tab.id;
+                return (
+                  <button
+                    key={tab.id}
+                    onClick={() => setActiveTab(tab.id)}
+                    className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-semibold transition-colors ${
+                      active ? 'bg-blue-600 text-white' : 'text-gray-700 hover:bg-gray-100'
+                    }`}
+                  >
+                    <Icon className={`w-4 h-4 ${active ? 'text-white' : 'text-gray-400'}`} />
+                    <span className="truncate">{tab.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
 
-      {renderContent()}
+        <div className="lg:col-span-9">
+          {renderContent()}
+        </div>
+      </div>
 
       {viewingGroup && (
         <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4">
