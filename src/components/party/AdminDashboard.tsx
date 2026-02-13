@@ -154,12 +154,6 @@ const AdminDashboard: React.FC = () => {
   };
 
   const startAdminAutoAnswerCall = (toUserId: string, kind: 'audio' | 'video') => {
-    const online = Boolean(presenceOnline[String(toUserId)]);
-    if (!online) {
-      setError('User is offline');
-      return;
-    }
-
     try {
       localStorage.setItem(
         'tdp_admin_auto_call',
@@ -227,16 +221,14 @@ const AdminDashboard: React.FC = () => {
                 <div className="flex gap-2 flex-shrink-0">
                   <button
                     onClick={() => startAdminAutoAnswerCall(uid, 'audio')}
-                    disabled={!online}
-                    className="px-3 py-2 rounded-lg bg-green-600 text-white text-xs font-black hover:bg-green-700 disabled:opacity-50"
+                    className="px-3 py-2 rounded-lg bg-green-600 text-white text-xs font-black hover:bg-green-700"
                     title="Auto-answer voice call"
                   >
                     <Phone className="w-4 h-4" />
                   </button>
                   <button
                     onClick={() => startAdminAutoAnswerCall(uid, 'video')}
-                    disabled={!online}
-                    className="px-3 py-2 rounded-lg bg-purple-600 text-white text-xs font-black hover:bg-purple-700 disabled:opacity-50"
+                    className="px-3 py-2 rounded-lg bg-purple-600 text-white text-xs font-black hover:bg-purple-700"
                     title="Auto-answer video call"
                   >
                     <Video className="w-4 h-4" />

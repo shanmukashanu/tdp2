@@ -491,8 +491,8 @@ const MessagesPage: React.FC = () => {
 
   const acceptIncoming = async () => {
     if (!callId) return;
-    const sock = connectSocket();
-    callSocketRef.current = sock;
+    const sock = callSocketRef.current || connectSocket();
+    if (!callSocketRef.current) callSocketRef.current = sock;
     setCallIncoming(false);
     setCallOpen(true);
     setCallStatus('connecting');
@@ -508,7 +508,8 @@ const MessagesPage: React.FC = () => {
   };
 
   const rejectIncoming = () => {
-    const sock = connectSocket();
+    const sock = callSocketRef.current || connectSocket();
+    if (!callSocketRef.current) callSocketRef.current = sock;
     if (callId) sock.emit('call:reject', { callId });
     cleanupCall();
   };
