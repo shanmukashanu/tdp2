@@ -24,6 +24,7 @@ const newsRoutes = require('./routes/news.routes');
 const newsletterRoutes = require('./routes/newsletter.routes');
 const adminChatsRoutes = require('./routes/adminChats.routes');
 const adminBlogCommentsRoutes = require('./routes/adminBlogComments.routes');
+const notificationsRoutes = require('./routes/notifications.routes');
 
 const app = express();
 
@@ -112,6 +113,7 @@ app.use('/api/messages', messageRoutes);
 app.use('/api/call-records', callRecordsRoutes);
 app.use('/api/news', newsRoutes);
 app.use('/api/newsletter', newsletterRoutes);
+app.use('/api', notificationsRoutes);
 app.use('/api/admin/chats', adminChatsRoutes);
 app.use('/api/admin/blog-comments', adminBlogCommentsRoutes);
 

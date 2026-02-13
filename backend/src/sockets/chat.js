@@ -1,9 +1,43 @@
 const Message = require('../models/Message');
 const CommunityMessage = require('../models/CommunityMessage');
 const Group = require('../models/Group');
+const User = require('../models/User');
+const { sendPushNotification } = require('../utils/notificationService');
 
 const activeCalls = new Map();
 const activeGroupCalls = new Map();
+
+async function getFcmTokensByUserIds(userIds) {
+  const ids = (userIds || []).map((x) => String(x)).filter(Boolean);
+  if (ids.length === 0) return [];
+
+  const users = await User.find({
+    _id: { $in: ids },
+    fcmToken: { $exists: true, $ne: '' },
+  }).select('_id fcmToken');
+
+  return users
+    .map((u) => ({ userId: String(u._id), fcmToken: String(u.fcmToken || '').trim() }))
+    .filter((u) => u.fcmToken);
+}
+
+async function pushToUsers(userIds, title, body, data) {
+  try {
+    const tokens = await getFcmTokensByUserIds(userIds);
+    if (tokens.length === 0) return;
+
+    await Promise.all(
+      tokens.map((t) =>
+        sendPushNotification(t.fcmToken, title, body, {
+          ...(data || {}),
+          toUserId: t.userId,
+        }).catch(() => null)
+      )
+    );
+  } catch {
+    // ignore push failures
+  }
+}
 
 function roomForPrivate(a, b) {
   const ids = [String(a), String(b)].sort();
@@ -52,6 +86,20 @@ function registerChatHandlers(io, socket) {
       io.to(room).emit('private:new', doc);
       io.to(`user:${toUserId}`).emit('private:new', doc);
 
+      await pushToUsers(
+        [String(toUserId)],
+        socket.user?.name ? String(socket.user.name) : 'New message',
+        text ? String(text) : 'Sent an attachment',
+        {
+          type: 'message',
+          scope: 'private',
+          fromUserId: String(socket.user._id),
+          toUserId: String(toUserId),
+          messageId: String(doc._id),
+          kind: media?.resourceType ? String(media.resourceType) : 'text',
+        }
+      );
+
       cb && cb({ ok: true, message: doc });
     } catch (e) {
       cb && cb({ ok: false, message: e?.message || 'Failed to send' });
@@ -63,7 +111,7 @@ function registerChatHandlers(io, socket) {
       if (!groupId) return cb && cb({ ok: false, message: 'groupId required' });
       if (!text && !media) return cb && cb({ ok: false, message: 'text or media required' });
 
-      const group = await Group.findById(groupId).select('_id isPublic members');
+      const group = await Group.findById(groupId).select('_id name isPublic members');
       if (!group) return cb && cb({ ok: false, message: 'Group not found' });
 
       const isMember = group.members.some((m) => String(m.user) === String(socket.user._id));
@@ -82,11 +130,36 @@ function registerChatHandlers(io, socket) {
       doc = await doc.populate('from', 'name membershipId profilePicture role');
 
       io.to(`group:${groupId}`).emit('group:new', doc);
+
+      const memberIds = (group.members || [])
+        .map((m) => String(m.user?._id || m.user))
+        .filter((id) => id && id !== String(socket.user._id));
+
+      await pushToUsers(
+        memberIds,
+        activeGroupNameForPush(groupId, group),
+        text ? String(text) : 'Sent an attachment',
+        {
+          type: 'message',
+          scope: 'group',
+          groupId: String(groupId),
+          fromUserId: String(socket.user._id),
+          messageId: String(doc._id),
+          kind: media?.resourceType ? String(media.resourceType) : 'text',
+        }
+      );
+
       cb && cb({ ok: true, message: doc });
     } catch (e) {
       cb && cb({ ok: false, message: e?.message || 'Failed to send' });
     }
   });
+
+  function activeGroupNameForPush(groupId, groupDoc) {
+    const name = groupDoc?.name;
+    if (name) return String(name);
+    return `Group`; // fallback
+  }
 
   socket.on('community:send', async ({ text, media }, cb) => {
     try {
@@ -101,6 +174,27 @@ function registerChatHandlers(io, socket) {
       doc = await doc.populate('from', 'name membershipId profilePicture role');
 
       io.to('community').emit('community:new', doc);
+
+      // Community can be large; push only to users who have an fcmToken and exclude sender.
+      try {
+        const users = await User.find({ fcmToken: { $exists: true, $ne: '' }, _id: { $ne: socket.user._id } }).select('_id');
+        const ids = users.map((u) => String(u._id));
+        await pushToUsers(
+          ids,
+          'Community',
+          text ? String(text) : 'Sent an attachment',
+          {
+            type: 'message',
+            scope: 'community',
+            fromUserId: String(socket.user._id),
+            messageId: String(doc._id),
+            kind: media?.resourceType ? String(media.resourceType) : 'text',
+          }
+        );
+      } catch {
+        // ignore
+      }
+
       cb && cb({ ok: true, message: doc });
     } catch (e) {
       cb && cb({ ok: false, message: e?.message || 'Failed to send' });
@@ -131,6 +225,20 @@ function registerChatHandlers(io, socket) {
           profilePicture: socket.user.profilePicture,
         },
       });
+
+      await pushToUsers(
+        [String(toUserId)],
+        k === 'video' ? 'Incoming video call' : 'Incoming voice call',
+        socket.user?.name ? `From ${socket.user.name}` : 'Incoming call',
+        {
+          type: 'call',
+          scope: 'private',
+          kind: k,
+          callId: String(callId),
+          fromUserId: String(socket.user._id),
+          toUserId: String(toUserId),
+        }
+      );
 
       cb && cb({ ok: true });
     } catch (e) {
@@ -212,7 +320,7 @@ function registerChatHandlers(io, socket) {
       if (!groupId) return cb && cb({ ok: false, message: 'groupId required' });
       if (!callId) return cb && cb({ ok: false, message: 'callId required' });
 
-      const group = await Group.findById(groupId).select('_id isPublic members');
+      const group = await Group.findById(groupId).select('_id name isPublic members');
       if (!group) return cb && cb({ ok: false, message: 'Group not found' });
 
       const isMember = group.members.some((m) => String(m.user) === String(socket.user._id));
@@ -242,6 +350,24 @@ function registerChatHandlers(io, socket) {
           profilePicture: socket.user.profilePicture,
         },
       });
+
+      const memberIds = (group.members || [])
+        .map((m) => String(m.user?._id || m.user))
+        .filter((id) => id && id !== String(socket.user._id));
+
+      await pushToUsers(
+        memberIds,
+        k === 'video' ? 'Incoming group video call' : 'Incoming group voice call',
+        socket.user?.name ? `From ${socket.user.name}` : 'Incoming group call',
+        {
+          type: 'call',
+          scope: 'group',
+          kind: k,
+          callId: String(callId),
+          groupId: String(groupId),
+          fromUserId: String(socket.user._id),
+        }
+      );
 
       cb && cb({ ok: true });
     } catch (e) {

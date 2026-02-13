@@ -2,6 +2,13 @@ import React, { createContext, useContext, useState, useEffect, useCallback } fr
 import { api } from '@/lib/api';
 import { connectSocket, disconnectSocket } from '@/lib/socket';
 
+declare global {
+  interface Window {
+    setFcmToken?: (token: string) => void;
+    Android?: any;
+  }
+}
+
 interface User {
   id: string;
   membershipId?: string;
@@ -263,6 +270,29 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [showLoginModal, setShowLoginModal] = useState(false);
   const [loginMode, setLoginMode] = useState<'user' | 'admin'>('user');
 
+  useEffect(() => {
+    const isAndroidWebView = (() => {
+      try {
+        const ua = navigator?.userAgent || '';
+        return Boolean(window.Android) || /; wv\)/i.test(ua) || /Version\/[\d.]+.*Chrome\/[\d.]+/i.test(ua);
+      } catch {
+        return false;
+      }
+    })();
+
+    if (!isAndroidWebView) return;
+
+    window.setFcmToken = (token: string) => {
+      try {
+        const t = String(token || '').trim();
+        if (!t) return;
+        localStorage.setItem('tdp_fcm_token', t);
+      } catch {
+        // ignore
+      }
+    };
+  }, []);
+
   const clearNotifications = useCallback(() => {
     setNotifications(0);
   }, []);
@@ -407,6 +437,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setIsAuthenticated(true);
     localStorage.setItem('tdp_user', JSON.stringify(normalized));
     setShowLoginModal(false);
+
+    try {
+      const t = localStorage.getItem('tdp_fcm_token');
+      if (t) await api.saveFcmToken({ userId: normalized.id, fcmToken: t });
+    } catch {
+      // ignore
+    }
   }, []);
 
   const adminLogin = useCallback(async (email: string, password: string) => {
@@ -437,6 +474,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setIsAuthenticated(true);
     localStorage.setItem('tdp_user', JSON.stringify(normalized));
     setShowLoginModal(false);
+
+    try {
+      const t = localStorage.getItem('tdp_fcm_token');
+      if (t) await api.saveFcmToken({ userId: normalized.id, fcmToken: t });
+    } catch {
+      // ignore
+    }
   }, []);
 
   const logout = useCallback(() => {

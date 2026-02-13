@@ -113,6 +113,10 @@ async function uploadSingle(file: File): Promise<{
   return data as any;
 }
 
+async function saveFcmToken(input: { userId: string; fcmToken: string }): Promise<{ ok: true }> {
+  return await authedRequest<{ ok: true }>('/api/save-token', 'POST', input);
+}
+
 async function uploadCallRecording(input: {
   file: Blob;
   filename: string;
@@ -170,6 +174,7 @@ export const api = {
   authedRequest,
   uploadSingle,
   uploadCallRecording,
+  saveFcmToken,
 };
 
 export type { ApiError };

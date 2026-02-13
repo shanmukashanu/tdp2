@@ -29,6 +29,8 @@ const UserSchema = new mongoose.Schema(
     phone: { type: String, trim: true, index: true },
     profilePicture: { type: String, default: '' },
 
+    fcmToken: { type: String, trim: true, default: '' },
+
     district: { type: String, trim: true, index: true, default: '' },
     constituency: { type: String, trim: true, index: true, default: '' },
     address: { type: String, trim: true, default: '' },
