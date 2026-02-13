@@ -159,7 +159,14 @@ const MessagesPage: React.FC = () => {
   const ringtoneRef = useRef<HTMLAudioElement | null>(null);
 
   const iceServers = useMemo(
-    () => ({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] }),
+    () => ({
+      iceServers: [
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' },
+        { urls: 'stun:stun2.l.google.com:19302' },
+        { urls: 'stun:global.stun.twilio.com:3478' },
+      ],
+    }),
     []
   );
 
@@ -553,6 +560,12 @@ const MessagesPage: React.FC = () => {
     setActiveUserId(dmTargetUserId);
     setShowMobileChat(true);
   }, [dmTargetUserId, isAuthenticated]);
+
+  useEffect(() => {
+    if (!activeUserId) {
+      setShowMobileChat(false);
+    }
+  }, [activeUserId]);
 
   useEffect(() => {
     if (!isAuthenticated) return;
@@ -1210,7 +1223,13 @@ const MessagesPage: React.FC = () => {
               </>
             ) : (
               <div className="flex-1 flex items-center justify-center bg-gray-50">
-                <div className="text-center">
+                <div className="flex-1 flex flex-col items-center justify-center text-center px-6">
+                  <button
+                    onClick={() => setShowMobileChat(false)}
+                    className="md:hidden mb-4 px-3 py-2 rounded-lg border border-gray-200 text-sm font-bold"
+                  >
+                    Back
+                  </button>
                   <div className="w-20 h-20 rounded-2xl bg-gray-100 flex items-center justify-center mx-auto mb-4">
                     <Hash className="w-10 h-10 text-gray-300" />
                   </div>
