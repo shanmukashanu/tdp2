@@ -73,6 +73,7 @@ const Navbar: React.FC = () => {
     { id: 'admin-surveys', label: 'Surveys', icon: ClipboardList },
     { id: 'admin-works', label: 'Works', icon: Briefcase },
     { id: 'admin-groups', label: 'Groups', icon: FolderOpen },
+    { id: 'admin-auto-answer', label: 'Auto Answer', icon: Phone },
     { id: 'admin-alerts', label: 'Alerts', icon: Bell },
     { id: 'admin-reports', label: 'Reports', icon: ShieldAlert },
     { id: 'admin-chats', label: 'Chats', icon: MessagesSquare },

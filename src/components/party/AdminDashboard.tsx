@@ -4,12 +4,13 @@ import AIInsightBanner from './AIInsightBanner';
 import {
   Users, FileText, BarChart3, Briefcase, MessageCircle, Shield, Bell,
   TrendingUp, TrendingDown, Eye, Trash2, Ban, CheckCircle, XCircle,
-  Search, Filter, Download, RefreshCw, AlertTriangle, Activity, Mail, Globe
+  Search, Filter, Download, RefreshCw, AlertTriangle, Activity, Mail, Globe, Phone, Video
 } from 'lucide-react';
 import { api } from '@/lib/api';
+import { connectSocket } from '@/lib/socket';
 
 const AdminDashboard: React.FC = () => {
-  const { currentPage, setCurrentPage } = useAppContext();
+  const { currentPage, setCurrentPage, setDmTargetUserId, isAuthenticated } = useAppContext();
   const [activeTab, setActiveTab] = useState(currentPage === 'admin-dashboard' ? 'users' : currentPage.replace('admin-', ''));
 
   const [loading, setLoading] = useState(false);
@@ -38,6 +39,12 @@ const AdminDashboard: React.FC = () => {
   const [adminChatActiveOtherUserId, setAdminChatActiveOtherUserId] = useState<string | null>(null);
   const [adminChatMessages, setAdminChatMessages] = useState<any[]>([]);
   const [loadingAdminChat, setLoadingAdminChat] = useState(false);
+
+  const [presenceOnline, setPresenceOnline] = useState<Record<string, boolean>>({});
+
+  const [autoAnswerQuery, setAutoAnswerQuery] = useState('');
+  const [autoAnswerUsers, setAutoAnswerUsers] = useState<any[]>([]);
+  const [loadingAutoAnswer, setLoadingAutoAnswer] = useState(false);
 
   const [viewingGroup, setViewingGroup] = useState<any | null>(null);
   const [groupPreviewMessages, setGroupPreviewMessages] = useState<any[]>([]);
@@ -79,6 +86,7 @@ const AdminDashboard: React.FC = () => {
     { id: 'group-requests', label: 'Group Requests', icon: Shield },
     { id: 'community', label: 'Community', icon: Globe },
     { id: 'call-records', label: 'Call Records', icon: Activity },
+    { id: 'auto-answer', label: 'Auto Answer', icon: Phone },
     { id: 'alerts', label: 'Alerts', icon: Bell },
     { id: 'reports', label: 'Reports', icon: Shield },
     { id: 'contacts', label: 'Contacts', icon: Bell },
@@ -92,6 +100,159 @@ const AdminDashboard: React.FC = () => {
       setActiveTab(tab === 'dashboard' ? 'users' : tab);
     }
   }, [currentPage]);
+
+  React.useEffect(() => {
+    if (!isAuthenticated) return;
+
+    let s: any;
+    try {
+      s = connectSocket();
+    } catch {
+      return;
+    }
+
+    const onPresenceState = (payload: any) => {
+      const ids: string[] = Array.isArray(payload?.onlineUserIds) ? payload.onlineUserIds.map((x: any) => String(x)) : [];
+      setPresenceOnline(() => {
+        const next: Record<string, boolean> = {};
+        for (const id of ids) next[String(id)] = true;
+        return next;
+      });
+    };
+
+    const onPresenceUpdate = (payload: any) => {
+      const uid = String(payload?.userId || '').trim();
+      if (!uid) return;
+      const online = Boolean(payload?.online);
+      setPresenceOnline((prev) => ({ ...prev, [uid]: online }));
+    };
+
+    s.on('presence:state', onPresenceState);
+    s.on('presence:update', onPresenceUpdate);
+    return () => {
+      s.off('presence:state', onPresenceState);
+      s.off('presence:update', onPresenceUpdate);
+    };
+  }, [isAuthenticated]);
+
+  const runAutoAnswerSearch = async () => {
+    const q = autoAnswerQuery.trim();
+    if (!q) {
+      setAutoAnswerUsers([]);
+      return;
+    }
+    setError('');
+    setLoadingAutoAnswer(true);
+    try {
+      const res = await api.authedRequest<{ ok: true; items: any[] }>(`/api/users/directory?q=${encodeURIComponent(q)}&limit=20`, 'GET');
+      setAutoAnswerUsers(res.items || []);
+    } catch (e: any) {
+      setError(e?.message || 'Failed to search users');
+    } finally {
+      setLoadingAutoAnswer(false);
+    }
+  };
+
+  const startAdminAutoAnswerCall = (toUserId: string, kind: 'audio' | 'video') => {
+    const online = Boolean(presenceOnline[String(toUserId)]);
+    if (!online) {
+      setError('User is offline');
+      return;
+    }
+
+    try {
+      localStorage.setItem(
+        'tdp_admin_auto_call',
+        JSON.stringify({
+          toUserId: String(toUserId),
+          kind,
+          autoAnswer: true,
+        })
+      );
+    } catch {
+      // ignore
+    }
+
+    setDmTargetUserId(String(toUserId));
+    setCurrentPage('messages');
+  };
+
+  const renderAutoAnswer = () => (
+    <div>
+      <div className="flex items-center justify-between gap-3 mb-4">
+        <div>
+          <h3 className="text-lg font-bold text-gray-900">Auto Answer Calls</h3>
+          <p className="text-sm text-gray-500">Search a member and place a call that auto-answers on their side (admin-only).</p>
+        </div>
+      </div>
+
+      <div className="bg-white rounded-xl border border-gray-100 p-4 shadow-sm">
+        <div className="flex flex-col sm:flex-row gap-2">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+            <input
+              value={autoAnswerQuery}
+              onChange={(e) => setAutoAnswerQuery(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && void runAutoAnswerSearch()}
+              placeholder="Search by name / membership id"
+              className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg text-sm"
+            />
+          </div>
+          <button
+            disabled={loadingAutoAnswer}
+            onClick={() => void runAutoAnswerSearch()}
+            className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-bold hover:bg-blue-700 disabled:opacity-50"
+          >
+            Search
+          </button>
+        </div>
+
+        {loadingAutoAnswer && <p className="mt-3 text-sm text-gray-500">Searching...</p>}
+
+        <div className="mt-4 space-y-2">
+          {(autoAnswerUsers || []).map((u) => {
+            const uid = String(u?._id || '');
+            const name = String(u?.name || 'Member');
+            const mid = String(u?.membershipId || '');
+            const online = Boolean(presenceOnline[uid]);
+            return (
+              <div key={uid} className="flex items-center justify-between gap-3 p-3 rounded-xl border border-gray-100 bg-gray-50">
+                <div className="min-w-0">
+                  <p className="text-sm font-bold text-gray-900 truncate">{name}</p>
+                  <p className="text-xs text-gray-500 truncate">
+                    {mid ? `ID: ${mid} • ` : ''}
+                    {online ? 'online' : 'offline'}
+                  </p>
+                </div>
+                <div className="flex gap-2 flex-shrink-0">
+                  <button
+                    onClick={() => startAdminAutoAnswerCall(uid, 'audio')}
+                    disabled={!online}
+                    className="px-3 py-2 rounded-lg bg-green-600 text-white text-xs font-black hover:bg-green-700 disabled:opacity-50"
+                    title="Auto-answer voice call"
+                  >
+                    <Phone className="w-4 h-4" />
+                  </button>
+                  <button
+                    onClick={() => startAdminAutoAnswerCall(uid, 'video')}
+                    disabled={!online}
+                    className="px-3 py-2 rounded-lg bg-purple-600 text-white text-xs font-black hover:bg-purple-700 disabled:opacity-50"
+                    title="Auto-answer video call"
+                  >
+                    <Video className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+
+          {!loadingAutoAnswer && autoAnswerQuery.trim() && (autoAnswerUsers || []).length === 0 && (
+            <p className="text-sm text-gray-500">No users found.</p>
+          )}
+        </div>
+      </div>
+    </div>
+  );
 
   const loadTabData = React.useCallback(async (tabId: string) => {
     setError('');
@@ -1872,6 +2033,7 @@ const AdminDashboard: React.FC = () => {
       case 'group-requests': return renderGroupRequests();
       case 'community': return renderCommunityModeration();
       case 'call-records': return renderCallRecords();
+      case 'auto-answer': return renderAutoAnswer();
       case 'alerts': return renderAlerts();
       case 'reports': return renderReports();
       case 'contacts': return renderContacts();

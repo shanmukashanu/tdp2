@@ -201,23 +201,27 @@ function registerChatHandlers(io, socket) {
     }
   });
 
-  socket.on('call:invite', async ({ toUserId, callId, kind }, cb) => {
+  socket.on('call:invite', async ({ toUserId, callId, kind, autoAnswer }, cb) => {
     try {
       if (!toUserId) return cb && cb({ ok: false, message: 'toUserId required' });
       if (!callId) return cb && cb({ ok: false, message: 'callId required' });
       const k = kind === 'video' ? 'video' : 'audio';
+
+      const aa = Boolean(autoAnswer) && String(socket.user?.role || '') === 'admin';
 
       activeCalls.set(String(callId), {
         callId: String(callId),
         kind: k,
         callerId: String(socket.user._id),
         calleeId: String(toUserId),
+        autoAnswer: aa,
         createdAt: Date.now(),
       });
 
       io.to(`user:${toUserId}`).emit('call:incoming', {
         callId: String(callId),
         kind: k,
+        autoAnswer: aa,
         from: {
           _id: String(socket.user._id),
           name: socket.user.name,
@@ -237,6 +241,7 @@ function registerChatHandlers(io, socket) {
           callId: String(callId),
           fromUserId: String(socket.user._id),
           toUserId: String(toUserId),
+          autoAnswer: aa ? '1' : '0',
         }
       );
 

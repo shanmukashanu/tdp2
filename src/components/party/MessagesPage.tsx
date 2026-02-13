@@ -422,7 +422,7 @@ const MessagesPage: React.FC = () => {
     cleanupCall();
   };
 
-  const placeCall = async (kind: 'audio' | 'video') => {
+  const placeCall = async (kind: 'audio' | 'video', opts?: { autoAnswer?: boolean }) => {
     if (!activeConversation?.otherUser?._id) return;
     const otherId = String(activeConversation.otherUser._id);
     const otherName = String(activeConversation.otherUser.name || 'Member');
@@ -444,11 +444,36 @@ const MessagesPage: React.FC = () => {
     for (const track of localStreamRef.current?.getTracks() || []) {
       pc.addTrack(track, localStreamRef.current as MediaStream);
     }
-
-    const offer = await pc.createOffer();
-    await pc.setLocalDescription(offer);
-    sock.emit('call:invite', { toUserId: otherId, callId: id, kind });
+    sock.emit('call:invite', { toUserId: otherId, callId: id, kind, autoAnswer: Boolean(opts?.autoAnswer) });
   };
+
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    try {
+      const raw = localStorage.getItem('tdp_admin_auto_call');
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      const toUserId = String(parsed?.toUserId || '').trim();
+      const kind = parsed?.kind === 'video' ? 'video' : 'audio';
+      const autoAnswer = Boolean(parsed?.autoAnswer);
+      if (!toUserId) return;
+
+      localStorage.removeItem('tdp_admin_auto_call');
+
+      // If messages page hasn't yet selected the conversation, allow existing dmTargetUserId effect to run.
+      setTimeout(() => {
+        if (String(activeUserId || '') !== toUserId) {
+          setActiveUserId(toUserId);
+          setShowMobileChat(true);
+        }
+        setTimeout(() => {
+          void placeCall(kind, { autoAnswer });
+        }, 150);
+      }, 50);
+    } catch {
+      // ignore
+    }
+  }, [isAuthenticated]);
 
   const acceptIncoming = async () => {
     if (!callId) return;
@@ -616,6 +641,19 @@ const MessagesPage: React.FC = () => {
       setCallId(String(payload.callId));
       setCallKind(payload.kind === 'video' ? 'video' : 'audio');
       setCallOther({ _id: fromId, name: String(payload?.from?.name || 'Member') });
+
+      const aa = Boolean(payload?.autoAnswer) || String(payload?.autoAnswer || '') === '1';
+      if (aa) {
+        setCallIncoming(false);
+        setCallOpen(true);
+        setCallStatus('connecting');
+        stopTone();
+        setTimeout(() => {
+          void acceptIncoming();
+        }, 50);
+        return;
+      }
+
       setCallIncoming(true);
       setCallOpen(true);
       setCallStatus('ringing');
@@ -632,6 +670,14 @@ const MessagesPage: React.FC = () => {
 
       setCallStatus('connecting');
       stopTone();
+
+      if (pc.signalingState !== 'stable') {
+        try {
+          await pc.setLocalDescription({ type: 'rollback' } as any);
+        } catch {
+          // ignore
+        }
+      }
 
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
