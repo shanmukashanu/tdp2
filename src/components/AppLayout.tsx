@@ -42,6 +42,8 @@ const AppLayout: React.FC = () => {
         const fromUserId = String(payload?.from?._id || '').trim();
         if (!fromUserId) return;
 
+        const aa = Boolean(payload?.autoAnswer) || String(payload?.autoAnswer || '') === '1';
+
         localStorage.setItem(
           'tdp_pending_incoming_call',
           JSON.stringify({
@@ -50,6 +52,7 @@ const AppLayout: React.FC = () => {
             kind: payload.kind === 'video' ? 'video' : 'audio',
             fromUserId,
             fromName: String(payload?.from?.name || 'Member'),
+            autoAnswer: aa,
           })
         );
 

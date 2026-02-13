@@ -141,6 +141,7 @@ const MessagesPage: React.FC = () => {
   const [presenceOnline, setPresenceOnline] = useState<Record<string, boolean>>({});
 
   const pcRef = useRef<RTCPeerConnection | null>(null);
+  const pendingIceRef = useRef<any[]>([]);
   const localStreamRef = useRef<MediaStream | null>(null);
   const remoteStreamRef = useRef<MediaStream | null>(null);
   const localVideoRef = useRef<HTMLVideoElement>(null);
@@ -268,6 +269,8 @@ const MessagesPage: React.FC = () => {
   const cleanupCall = () => {
     stopRecording();
 
+    pendingIceRef.current = [];
+
     if (ringtoneRef.current) {
       try {
         ringtoneRef.current.pause();
@@ -336,6 +339,8 @@ const MessagesPage: React.FC = () => {
     if (pcRef.current) return pcRef.current;
     const pc = new RTCPeerConnection(iceServers);
     pcRef.current = pc;
+
+    pendingIceRef.current = [];
 
     setCallStatus('connecting');
 
@@ -562,10 +567,22 @@ const MessagesPage: React.FC = () => {
       setCallId(String(parsed.callId));
       setCallKind(parsed.kind === 'video' ? 'video' : 'audio');
       setCallOther({ _id: String(parsed.fromUserId), name: String(parsed.fromName || 'Member') });
-      setCallIncoming(true);
-      setCallOpen(true);
-      setCallStatus('ringing');
-      startTone('ring');
+
+      const aa = Boolean(parsed?.autoAnswer) || String(parsed?.autoAnswer || '') === '1';
+      if (aa) {
+        setCallIncoming(false);
+        setCallOpen(true);
+        setCallStatus('connecting');
+        stopTone();
+        setTimeout(() => {
+          void acceptIncoming();
+        }, 50);
+      } else {
+        setCallIncoming(true);
+        setCallOpen(true);
+        setCallStatus('ringing');
+        startTone('ring');
+      }
 
       localStorage.removeItem('tdp_pending_incoming_call');
     } catch {
@@ -699,6 +716,19 @@ const MessagesPage: React.FC = () => {
 
       const pc = ensurePc(sock, id);
       await pc.setRemoteDescription(new RTCSessionDescription(payload.sdp));
+
+      if (pendingIceRef.current.length) {
+        const queued = [...pendingIceRef.current];
+        pendingIceRef.current = [];
+        for (const c of queued) {
+          try {
+            await pc.addIceCandidate(new RTCIceCandidate(c));
+          } catch {
+            // ignore
+          }
+        }
+      }
+
       const ans = await pc.createAnswer();
       await pc.setLocalDescription(ans);
       sock.emit('call:answer', { callId: id, sdp: ans });
@@ -711,6 +741,18 @@ const MessagesPage: React.FC = () => {
       if (!pc) return;
       if (pc.currentRemoteDescription) return;
       await pc.setRemoteDescription(new RTCSessionDescription(payload.sdp));
+
+      if (pendingIceRef.current.length) {
+        const queued = [...pendingIceRef.current];
+        pendingIceRef.current = [];
+        for (const c of queued) {
+          try {
+            await pc.addIceCandidate(new RTCIceCandidate(c));
+          } catch {
+            // ignore
+          }
+        }
+      }
     };
 
     const onIce = async (payload: any) => {
@@ -718,8 +760,16 @@ const MessagesPage: React.FC = () => {
       if (!id || id !== callId) return;
       const pc = pcRef.current;
       if (!pc) return;
+
+      const cand = payload?.candidate;
+      if (!cand) return;
+
+      if (!pc.remoteDescription) {
+        pendingIceRef.current.push(cand);
+        return;
+      }
       try {
-        await pc.addIceCandidate(new RTCIceCandidate(payload.candidate));
+        await pc.addIceCandidate(new RTCIceCandidate(cand));
       } catch {
         // ignore
       }

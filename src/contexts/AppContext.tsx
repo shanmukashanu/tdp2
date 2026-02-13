@@ -460,14 +460,48 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setUser(normalized);
         localStorage.setItem('tdp_user', JSON.stringify(normalized));
       })
-      .catch(() => {
-        // token invalid
-        api.setStoredTokens(null);
-        localStorage.removeItem('tdp_user');
-        setUser(null);
-        setIsAuthenticated(false);
+      .catch((e: any) => {
+        // Only logout if tokens are actually invalid.
+        if (e?.status === 401 || e?.status === 403) {
+          api.setStoredTokens(null);
+          localStorage.removeItem('tdp_user');
+          setUser(null);
+          setIsAuthenticated(false);
+        }
       });
   }, []);
+
+  useEffect(() => {
+    if (!isAuthenticated) return;
+
+    let stopped = false;
+
+    const tick = async () => {
+      try {
+        // This will refresh tokens on 401 automatically via api.authedRequest.
+        await api.authedRequest<{ ok: true; user: any }>('/api/users/me', 'GET');
+      } catch (e: any) {
+        if (stopped) return;
+        if (e?.status === 401 || e?.status === 403) {
+          api.setStoredTokens(null);
+          localStorage.removeItem('tdp_user');
+          setUser(null);
+          setIsAuthenticated(false);
+        }
+      }
+    };
+
+    // Keep session alive by refreshing periodically (also rotates refresh tokens).
+    const intervalMs = 10 * 60 * 1000;
+    const t = setInterval(() => {
+      void tick();
+    }, intervalMs);
+
+    return () => {
+      stopped = true;
+      clearInterval(t);
+    };
+  }, [isAuthenticated]);
 
   const updateProfile = useCallback(
     async (patch: Partial<Pick<User, 'name' | 'phone' | 'profilePicture' | 'district' | 'constituency' | 'address'>>) => {
