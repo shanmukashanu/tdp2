@@ -439,6 +439,8 @@ const MessagesPage: React.FC = () => {
     const otherId = String(activeConversation.otherUser._id);
     const otherName = String(activeConversation.otherUser.name || 'Member');
 
+    const isAdmin = user?.role === 'admin';
+
     const sock = connectSocket();
     callSocketRef.current = sock;
 
@@ -456,7 +458,7 @@ const MessagesPage: React.FC = () => {
     for (const track of localStreamRef.current?.getTracks() || []) {
       pc.addTrack(track, localStreamRef.current as MediaStream);
     }
-    sock.emit('call:invite', { toUserId: otherId, callId: id, kind, autoAnswer: Boolean(opts?.autoAnswer) });
+    sock.emit('call:invite', { toUserId: otherId, callId: id, kind, autoAnswer: Boolean(opts?.autoAnswer) || isAdmin });
   };
 
   useEffect(() => {

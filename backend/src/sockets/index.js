@@ -5,7 +5,13 @@ const User = require('../models/User');
 
 const { registerChatHandlers } = require('./chat');
 
-const onlineUserIds = new Set();
+const onlineUserCounts = new Map();
+
+function snapshotOnlineUserIds() {
+  return Array.from(onlineUserCounts.entries())
+    .filter(([, c]) => Number(c) > 0)
+    .map(([id]) => String(id));
+}
 
 function initSockets(httpServer) {
   function normalizeOrigin(o) {
@@ -77,9 +83,12 @@ function initSockets(httpServer) {
     try {
       const me = String(socket.user?._id || '').trim();
       if (me) {
-        onlineUserIds.add(me);
-        socket.emit('presence:state', { onlineUserIds: Array.from(onlineUserIds) });
-        socket.broadcast.emit('presence:update', { userId: me, online: true });
+        const prev = Number(onlineUserCounts.get(me) || 0);
+        onlineUserCounts.set(me, prev + 1);
+        socket.emit('presence:state', { onlineUserIds: snapshotOnlineUserIds() });
+        if (prev === 0) {
+          socket.broadcast.emit('presence:update', { userId: me, online: true });
+        }
       }
     } catch {
       // ignore
@@ -91,8 +100,15 @@ function initSockets(httpServer) {
       try {
         const me = String(socket.user?._id || '').trim();
         if (!me) return;
-        onlineUserIds.delete(me);
-        socket.broadcast.emit('presence:update', { userId: me, online: false });
+
+        const prev = Number(onlineUserCounts.get(me) || 0);
+        const next = Math.max(0, prev - 1);
+        if (next === 0) {
+          onlineUserCounts.delete(me);
+          socket.broadcast.emit('presence:update', { userId: me, online: false });
+        } else {
+          onlineUserCounts.set(me, next);
+        }
       } catch {
         // ignore
       }
