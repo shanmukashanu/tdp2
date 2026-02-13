@@ -138,6 +138,8 @@ const MessagesPage: React.FC = () => {
   const [callCamOff, setCallCamOff] = useState(false);
   const [callStatus, setCallStatus] = useState<'calling' | 'ringing' | 'connecting' | 'connected' | 'ended'>('calling');
 
+  const [presenceOnline, setPresenceOnline] = useState<Record<string, boolean>>({});
+
   const pcRef = useRef<RTCPeerConnection | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
   const remoteStreamRef = useRef<MediaStream | null>(null);
@@ -525,8 +527,48 @@ const MessagesPage: React.FC = () => {
   useEffect(() => {
     if (!isAuthenticated) return;
 
+    try {
+      const raw = localStorage.getItem('tdp_pending_incoming_call');
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      if (!parsed || parsed.scope !== 'private') return;
+      if (!parsed.callId || !parsed.fromUserId) return;
+
+      setCallId(String(parsed.callId));
+      setCallKind(parsed.kind === 'video' ? 'video' : 'audio');
+      setCallOther({ _id: String(parsed.fromUserId), name: String(parsed.fromName || 'Member') });
+      setCallIncoming(true);
+      setCallOpen(true);
+      setCallStatus('ringing');
+      startTone('ring');
+
+      localStorage.removeItem('tdp_pending_incoming_call');
+    } catch {
+      // ignore
+    }
+  }, [isAuthenticated]);
+
+  useEffect(() => {
+    if (!isAuthenticated) return;
+
     const s = connectSocket();
     callSocketRef.current = s;
+
+    const onPresenceState = (payload: any) => {
+      const ids: string[] = Array.isArray(payload?.onlineUserIds) ? payload.onlineUserIds.map((x: any) => String(x)) : [];
+      setPresenceOnline(() => {
+        const next: Record<string, boolean> = {};
+        for (const id of ids) next[String(id)] = true;
+        return next;
+      });
+    };
+
+    const onPresenceUpdate = (payload: any) => {
+      const uid = String(payload?.userId || '').trim();
+      if (!uid) return;
+      const online = Boolean(payload?.online);
+      setPresenceOnline((prev) => ({ ...prev, [uid]: online }));
+    };
 
     const onNew = (msg: ChatMessage) => {
       const fromId = String(msg?.from?._id || msg?.from);
@@ -563,6 +605,8 @@ const MessagesPage: React.FC = () => {
     };
 
     s.on('private:new', onNew);
+    s.on('presence:state', onPresenceState);
+    s.on('presence:update', onPresenceUpdate);
 
     const onIncoming = (payload: any) => {
       const me = String(user?.id);
@@ -651,6 +695,8 @@ const MessagesPage: React.FC = () => {
 
     return () => {
       s.off('private:new', onNew);
+      s.off('presence:state', onPresenceState);
+      s.off('presence:update', onPresenceUpdate);
       s.off('call:incoming', onIncoming);
       s.off('call:accepted', onAccepted);
       s.off('call:rejected', onRejected);
@@ -932,7 +978,11 @@ const MessagesPage: React.FC = () => {
                     </div>
                     <div className="min-w-0">
                       <h3 className="text-sm font-bold text-gray-900 truncate">{activeConversation.otherUser.name}</h3>
-                      <p className="text-[10px] text-gray-400 uppercase font-medium">private chat</p>
+                      <p className="text-[10px] text-gray-400 uppercase font-medium">
+                        private chat
+                        {' • '}
+                        {presenceOnline[String(activeConversation.otherUser._id)] ? 'online' : 'offline'}
+                      </p>
                     </div>
                   </div>
                   <div className="flex items-center gap-1 flex-shrink-0">

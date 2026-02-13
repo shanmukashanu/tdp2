@@ -114,6 +114,46 @@ const GroupsPage: React.FC = () => {
   const [newGroupDescription, setNewGroupDescription] = useState('');
   const [newGroupIsPublic, setNewGroupIsPublic] = useState(true);
 
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    try {
+      const gid = localStorage.getItem('tdp_open_group_id');
+      if (!gid) return;
+      setActiveGroupId(String(gid));
+      setShowMobileChat(true);
+      localStorage.removeItem('tdp_open_group_id');
+    } catch {
+      // ignore
+    }
+  }, [isAuthenticated]);
+
+  useEffect(() => {
+    if (!isAuthenticated) return;
+
+    try {
+      const raw = localStorage.getItem('tdp_pending_incoming_call');
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      if (!parsed || parsed.scope !== 'group') return;
+      if (!parsed.callId || !parsed.groupId) return;
+
+      setActiveGroupId(String(parsed.groupId));
+      setShowMobileChat(true);
+
+      setCallId(String(parsed.callId));
+      setCallKind(parsed.kind === 'video' ? 'video' : 'audio');
+      setCallFrom({ _id: String(parsed.fromUserId || 'member'), name: String(parsed.fromName || 'Member') });
+      setCallIncoming(true);
+      setCallOpen(true);
+      setCallStatus('ringing');
+      startTone('ring');
+
+      localStorage.removeItem('tdp_pending_incoming_call');
+    } catch {
+      // ignore
+    }
+  }, [isAuthenticated]);
+
   const stopRecording = () => {
     const recorder = recRecorderRef.current;
     if (!recorder) return;

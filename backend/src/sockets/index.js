@@ -5,6 +5,8 @@ const User = require('../models/User');
 
 const { registerChatHandlers } = require('./chat');
 
+const onlineUserIds = new Set();
+
 function initSockets(httpServer) {
   function normalizeOrigin(o) {
     return String(o || '').trim().replace(/\/+$/, '');
@@ -72,7 +74,29 @@ function initSockets(httpServer) {
   });
 
   io.on('connection', (socket) => {
+    try {
+      const me = String(socket.user?._id || '').trim();
+      if (me) {
+        onlineUserIds.add(me);
+        socket.emit('presence:state', { onlineUserIds: Array.from(onlineUserIds) });
+        socket.broadcast.emit('presence:update', { userId: me, online: true });
+      }
+    } catch {
+      // ignore
+    }
+
     registerChatHandlers(io, socket);
+
+    socket.on('disconnect', () => {
+      try {
+        const me = String(socket.user?._id || '').trim();
+        if (!me) return;
+        onlineUserIds.delete(me);
+        socket.broadcast.emit('presence:update', { userId: me, online: false });
+      } catch {
+        // ignore
+      }
+    });
   });
 }
 

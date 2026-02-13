@@ -1,5 +1,6 @@
 import React, { useEffect } from 'react';
 import { useAppContext } from '@/contexts/AppContext';
+import { connectSocket } from '@/lib/socket';
 import Navbar from './party/Navbar';
 import Footer from './party/Footer';
 import LoginModal from './party/LoginModal';
@@ -18,12 +19,75 @@ import ProfilePage from './party/ProfilePage';
 import AdminDashboard from './party/AdminDashboard';
 
 const AppLayout: React.FC = () => {
-  const { currentPage, user } = useAppContext();
+  const { currentPage, user, isAuthenticated, setCurrentPage } = useAppContext();
 
   // Scroll to top on page change
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }, [currentPage]);
+
+  useEffect(() => {
+    if (!isAuthenticated) return;
+
+    let s: any;
+    try {
+      s = connectSocket();
+    } catch {
+      return;
+    }
+
+    const onIncoming = (payload: any) => {
+      try {
+        if (!payload?.callId) return;
+        const fromUserId = String(payload?.from?._id || '').trim();
+        if (!fromUserId) return;
+
+        localStorage.setItem(
+          'tdp_pending_incoming_call',
+          JSON.stringify({
+            scope: 'private',
+            callId: String(payload.callId),
+            kind: payload.kind === 'video' ? 'video' : 'audio',
+            fromUserId,
+            fromName: String(payload?.from?.name || 'Member'),
+          })
+        );
+
+        setCurrentPage('messages');
+      } catch {
+        // ignore
+      }
+    };
+
+    const onIncomingGroup = (payload: any) => {
+      try {
+        if (!payload?.callId || !payload?.groupId) return;
+        localStorage.setItem(
+          'tdp_pending_incoming_call',
+          JSON.stringify({
+            scope: 'group',
+            callId: String(payload.callId),
+            kind: payload.kind === 'video' ? 'video' : 'audio',
+            groupId: String(payload.groupId),
+            fromUserId: String(payload?.from?._id || ''),
+            fromName: String(payload?.from?.name || 'Member'),
+          })
+        );
+        localStorage.setItem('tdp_open_group_id', String(payload.groupId));
+        setCurrentPage('groups');
+      } catch {
+        // ignore
+      }
+    };
+
+    s.on('call:incoming', onIncoming);
+    s.on('groupcall:incoming', onIncomingGroup);
+
+    return () => {
+      s.off('call:incoming', onIncoming);
+      s.off('groupcall:incoming', onIncomingGroup);
+    };
+  }, [isAuthenticated, setCurrentPage]);
 
   const renderPage = () => {
     // Admin pages - redirect to admin dashboard if user is admin

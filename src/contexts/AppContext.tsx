@@ -5,6 +5,7 @@ import { connectSocket, disconnectSocket } from '@/lib/socket';
 declare global {
   interface Window {
     setFcmToken?: (token: string) => void;
+    handlePushOpen?: (payload: any) => void;
     Android?: any;
   }
 }
@@ -287,6 +288,91 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         const t = String(token || '').trim();
         if (!t) return;
         localStorage.setItem('tdp_fcm_token', t);
+      } catch {
+        // ignore
+      }
+    };
+
+    window.handlePushOpen = (payload: any) => {
+      try {
+        const type = String(payload?.type || '').trim();
+        const scope = String(payload?.scope || '').trim();
+
+        let me = '';
+        try {
+          const raw = localStorage.getItem('tdp_user');
+          if (raw) {
+            const parsed = JSON.parse(raw);
+            me = String(parsed?.id || parsed?._id || '').trim();
+          }
+        } catch {
+          // ignore
+        }
+
+        if (type === 'message') {
+          if (scope === 'private') {
+            const fromUserId = String(payload?.fromUserId || '').trim();
+            const toUserId = String(payload?.toUserId || '').trim();
+            const otherId = fromUserId && fromUserId !== me ? fromUserId : toUserId;
+            if (otherId) {
+              setDmTargetUserId(otherId);
+              setCurrentPage('messages');
+            }
+            return;
+          }
+
+          if (scope === 'group') {
+            const groupId = String(payload?.groupId || '').trim();
+            if (groupId) {
+              localStorage.setItem('tdp_open_group_id', groupId);
+              setCurrentPage('groups');
+            }
+            return;
+          }
+
+          if (scope === 'community') {
+            setCurrentPage('community');
+            return;
+          }
+        }
+
+        if (type === 'call') {
+          if (scope === 'private') {
+            const fromUserId = String(payload?.fromUserId || '').trim();
+            if (fromUserId) {
+              localStorage.setItem(
+                'tdp_pending_incoming_call',
+                JSON.stringify({
+                  scope: 'private',
+                  callId: String(payload?.callId || ''),
+                  kind: String(payload?.kind || ''),
+                  fromUserId,
+                })
+              );
+              setCurrentPage('messages');
+            }
+            return;
+          }
+
+          if (scope === 'group') {
+            const groupId = String(payload?.groupId || '').trim();
+            if (groupId) {
+              localStorage.setItem(
+                'tdp_pending_incoming_call',
+                JSON.stringify({
+                  scope: 'group',
+                  callId: String(payload?.callId || ''),
+                  kind: String(payload?.kind || ''),
+                  groupId,
+                  fromUserId: String(payload?.fromUserId || ''),
+                })
+              );
+              localStorage.setItem('tdp_open_group_id', groupId);
+              setCurrentPage('groups');
+            }
+            return;
+          }
+        }
       } catch {
         // ignore
       }
