@@ -80,17 +80,32 @@ async function sendPushNotification(userToken, title, body, data = {}) {
     return { ok: false, skipped: true, reason: 'firebase_not_configured' };
   }
 
-  const message = {
-    token: String(userToken),
-    notification: {
-      title: String(title || ''),
-      body: String(body || ''),
-    },
-    data: Object.entries(data || {}).reduce((acc, [k, v]) => {
-      acc[String(k)] = String(v);
-      return acc;
-    }, {}),
-  };
+  const normalizedData = Object.entries(data || {}).reduce((acc, [k, v]) => {
+    acc[String(k)] = String(v);
+    return acc;
+  }, {});
+
+  const isCall = String(normalizedData?.type || '') === 'call';
+
+  // For calls we send a data-only message so Android always receives it in
+  // FirebaseMessagingService.onMessageReceived (system-handled notification
+  // payload can bypass the service and lose our custom ringtone + deep link).
+  const message = isCall
+    ? {
+        token: String(userToken),
+        data: normalizedData,
+        android: {
+          priority: 'high',
+        },
+      }
+    : {
+        token: String(userToken),
+        notification: {
+          title: String(title || ''),
+          body: String(body || ''),
+        },
+        data: normalizedData,
+      };
 
   const messageId = await admin.messaging().send(message);
   return { ok: true, messageId };
