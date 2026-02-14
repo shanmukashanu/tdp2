@@ -104,7 +104,28 @@ const GroupsPage: React.FC = () => {
   const ringtoneRef = useRef<HTMLAudioElement | null>(null);
 
   const iceServers = useMemo(
-    () => ({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] }),
+    () => {
+      const turnUrlsRaw = String((import.meta as any).env?.VITE_TURN_URLS || '').trim();
+      const turnUsername = String((import.meta as any).env?.VITE_TURN_USERNAME || '').trim();
+      const turnCredential = String((import.meta as any).env?.VITE_TURN_CREDENTIAL || '').trim();
+
+      const ice: any[] = [
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' },
+        { urls: 'stun:stun2.l.google.com:19302' },
+        { urls: 'stun:global.stun.twilio.com:3478' },
+      ];
+
+      const turnUrls = turnUrlsRaw
+        ? turnUrlsRaw.split(',').map((s) => s.trim()).filter(Boolean)
+        : [];
+
+      if (turnUrls.length && turnUsername && turnCredential) {
+        ice.push({ urls: turnUrls, username: turnUsername, credential: turnCredential });
+      }
+
+      return { iceServers: ice };
+    },
     []
   );
 
@@ -1279,30 +1300,46 @@ const GroupsPage: React.FC = () => {
           </div>
 
           <div className="p-4 bg-gray-50">
-            <div className="relative bg-black rounded-xl overflow-hidden aspect-video flex items-center justify-center">
-              {remoteStreams.length > 0 ? (
-                <video
-                  ref={(el) => {
-                    const uid = remoteStreams[0]?.userId;
-                    if (!uid) return;
-                    remoteVideoElsRef.current.set(String(uid), el);
-                    const rs = remoteStreams.find((x) => String(x.userId) === String(uid));
-                    if (el && rs?.stream && el.srcObject !== rs.stream) el.srcObject = rs.stream;
-                  }}
-                  autoPlay
-                  playsInline
-                  className="w-full h-full object-cover"
-                />
-              ) : (
-                <video ref={localVideoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
-              )}
+            {callKind === 'video' ? (
+              <div className="relative bg-black rounded-xl overflow-hidden aspect-video flex items-center justify-center">
+                {remoteStreams.length > 0 ? (
+                  <video
+                    ref={(el) => {
+                      const uid = remoteStreams[0]?.userId;
+                      if (!uid) return;
+                      remoteVideoElsRef.current.set(String(uid), el);
+                      const rs = remoteStreams.find((x) => String(x.userId) === String(uid));
+                      if (el && rs?.stream && el.srcObject !== rs.stream) el.srcObject = rs.stream;
+                    }}
+                    autoPlay
+                    playsInline
+                    className="w-full h-full object-cover"
+                  />
+                ) : (
+                  <video ref={localVideoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
+                )}
 
-              <div className="absolute bottom-3 right-3 w-28 h-40 sm:w-36 sm:h-24 md:w-44 md:h-28 bg-black rounded-lg overflow-hidden border border-white/20">
-                <video ref={localVideoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
+                <div className="absolute bottom-3 right-3 w-28 h-40 sm:w-36 sm:h-24 md:w-44 md:h-28 bg-black rounded-lg overflow-hidden border border-white/20">
+                  <video ref={localVideoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
+                </div>
               </div>
-            </div>
+            ) : (
+              <div className="bg-white border border-gray-200 rounded-2xl p-8 flex flex-col items-center justify-center text-center">
+                <div className="w-20 h-20 rounded-full bg-green-50 flex items-center justify-center mb-3">
+                  <Phone className="w-10 h-10 text-green-600" />
+                </div>
+                <p className="text-lg font-black text-gray-900">{activeGroup?.name || 'Group'}</p>
+                <p className="text-sm text-gray-500 mt-1">
+                  {callIncoming ? 'Incoming voice call' : 'Voice call'}
+                  {callStatus === 'calling' ? ' • Calling…' : ''}
+                  {callStatus === 'ringing' ? ' • Ringing…' : ''}
+                  {callStatus === 'connecting' ? ' • Connecting…' : ''}
+                  {callStatus === 'connected' ? ' • Connected' : ''}
+                </p>
+              </div>
+            )}
 
-            {remoteStreams.length > 1 && (
+            {callKind === 'video' && remoteStreams.length > 1 && (
               <div className="mt-3 flex gap-2 overflow-x-auto">
                 {remoteStreams.slice(1).map(({ userId: uid }) => (
                   <div key={uid} className="bg-black rounded-lg overflow-hidden w-28 h-20 flex-shrink-0">

@@ -62,6 +62,32 @@ const AppLayout: React.FC = () => {
       }
     };
 
+    const clearPendingIfMatches = (scope: 'private' | 'group', callId: string) => {
+      try {
+        const raw = localStorage.getItem('tdp_pending_incoming_call');
+        if (!raw) return;
+        const parsed = JSON.parse(raw);
+        if (!parsed) return;
+        if (String(parsed.scope) !== String(scope)) return;
+        if (String(parsed.callId) !== String(callId)) return;
+        localStorage.removeItem('tdp_pending_incoming_call');
+      } catch {
+        // ignore
+      }
+    };
+
+    const onHangup = (payload: any) => {
+      const id = String(payload?.callId || '').trim();
+      if (!id) return;
+      clearPendingIfMatches('private', id);
+    };
+
+    const onGroupHangup = (payload: any) => {
+      const id = String(payload?.callId || '').trim();
+      if (!id) return;
+      clearPendingIfMatches('group', id);
+    };
+
     const onIncomingGroup = (payload: any) => {
       try {
         if (!payload?.callId || !payload?.groupId) return;
@@ -85,10 +111,14 @@ const AppLayout: React.FC = () => {
 
     s.on('call:incoming', onIncoming);
     s.on('groupcall:incoming', onIncomingGroup);
+    s.on('call:hangup', onHangup);
+    s.on('groupcall:hangup', onGroupHangup);
 
     return () => {
       s.off('call:incoming', onIncoming);
       s.off('groupcall:incoming', onIncomingGroup);
+      s.off('call:hangup', onHangup);
+      s.off('groupcall:hangup', onGroupHangup);
     };
   }, [isAuthenticated, setCurrentPage]);
 
