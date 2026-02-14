@@ -1,5 +1,4 @@
 import { io, type Socket } from 'socket.io-client';
-import API from '@/lib/api.js';
 import { api as apiHelpers } from '@/lib/api';
 
 let socket: Socket | null = null;
@@ -18,10 +17,21 @@ export function connectSocket(): Socket {
 
   if (socket && socket.connected && lastToken === token) return socket;
 
-  const baseUrl = String(API.defaults.baseURL || apiHelpers.API_BASE || '').replace(/\/+$/, '');
+  const baseUrl = String(apiHelpers.API_BASE || '').replace(/\/+$/, '');
+
+  const isAndroidWebView = (() => {
+    try {
+      const ua = navigator?.userAgent || '';
+      return Boolean((window as any).Android) || /; wv\)/i.test(ua) || /Version\/[\d.]+.*Chrome\/[\d.]+/i.test(ua);
+    } catch {
+      return false;
+    }
+  })();
+
+  const transports: any = isAndroidWebView ? ['websocket'] : ['websocket', 'polling'];
 
   socket = io(baseUrl, {
-    transports: ['websocket'],
+    transports,
     auth: { token },
     autoConnect: true,
     reconnection: true,

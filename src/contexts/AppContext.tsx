@@ -339,6 +339,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         if (type === 'call') {
           if (scope === 'private') {
             const fromUserId = String(payload?.fromUserId || '').trim();
+            const autoAnswer = Boolean(payload?.autoAnswer) || String(payload?.autoAnswer || '') === '1';
             if (fromUserId) {
               localStorage.setItem(
                 'tdp_pending_incoming_call',
@@ -347,6 +348,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                   callId: String(payload?.callId || ''),
                   kind: String(payload?.kind || ''),
                   fromUserId,
+                  autoAnswer,
                 })
               );
               setCurrentPage('messages');

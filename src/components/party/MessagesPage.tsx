@@ -138,6 +138,8 @@ const MessagesPage: React.FC = () => {
   const [callCamOff, setCallCamOff] = useState(false);
   const [callStatus, setCallStatus] = useState<'calling' | 'ringing' | 'connecting' | 'connected' | 'ended'>('calling');
 
+  const callIdRef = useRef<string | null>(null);
+
   const [presenceOnline, setPresenceOnline] = useState<Record<string, boolean>>({});
 
   const pcRef = useRef<RTCPeerConnection | null>(null);
@@ -329,11 +331,16 @@ const MessagesPage: React.FC = () => {
     setCallOpen(false);
     setCallIncoming(false);
     setCallId(null);
+    callIdRef.current = null;
     setCallOther(null);
     setCallMuted(false);
     setCallCamOff(false);
     setCallStatus('ended');
   };
+
+  useEffect(() => {
+    callIdRef.current = callId;
+  }, [callId]);
 
   const startTone = (_mode: 'ring' | 'ringback') => {
     if (ringtoneRef.current) return;
@@ -461,6 +468,7 @@ const MessagesPage: React.FC = () => {
     const id = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
     setCallKind(kind);
     setCallId(id);
+    callIdRef.current = id;
     setCallOther({ _id: otherId, name: otherName });
     setCallIncoming(false);
     setCallOpen(true);
@@ -503,22 +511,27 @@ const MessagesPage: React.FC = () => {
     }
   }, [isAuthenticated]);
 
-  const acceptIncoming = async () => {
-    if (!callId) return;
+  const acceptIncoming = async (incomingCallId?: string) => {
+    const id = String(incomingCallId || callId || '').trim();
+    if (!id) return;
+
     const sock = callSocketRef.current || connectSocket();
     if (!callSocketRef.current) callSocketRef.current = sock;
+
+    setCallId(id);
+    callIdRef.current = id;
     setCallIncoming(false);
     setCallOpen(true);
     setCallStatus('connecting');
     stopTone();
 
     await startLocalMedia(callKind);
-    const pc = ensurePc(sock, callId);
+    const pc = ensurePc(sock, id);
     for (const track of localStreamRef.current?.getTracks() || []) {
       pc.addTrack(track, localStreamRef.current as MediaStream);
     }
 
-    sock.emit('call:accept', { callId });
+    sock.emit('call:accept', { callId: id });
   };
 
   const rejectIncoming = () => {
@@ -605,7 +618,7 @@ const MessagesPage: React.FC = () => {
         setCallStatus('connecting');
         stopTone();
         setTimeout(() => {
-          void acceptIncoming();
+          void acceptIncoming(String(parsed.callId));
         }, 50);
       } else {
         setCallIncoming(true);
@@ -696,7 +709,7 @@ const MessagesPage: React.FC = () => {
         setCallStatus('connecting');
         stopTone();
         setTimeout(() => {
-          void acceptIncoming();
+          void acceptIncoming(String(payload.callId));
         }, 50);
         return;
       }
@@ -709,7 +722,7 @@ const MessagesPage: React.FC = () => {
 
     const onAccepted = async (payload: any) => {
       const id = String(payload?.callId || '');
-      if (!id || id !== callId) return;
+      if (!id || id !== String(callIdRef.current || '')) return;
       const sock = callSocketRef.current;
       if (!sock) return;
       const pc = pcRef.current;
@@ -733,14 +746,14 @@ const MessagesPage: React.FC = () => {
 
     const onRejected = (payload: any) => {
       const id = String(payload?.callId || '');
-      if (!id || id !== callId) return;
+      if (!id || id !== String(callIdRef.current || '')) return;
       cleanupCall();
     };
 
     const onOffer = async (payload: any) => {
       const id = String(payload?.callId || '');
       if (!id) return;
-      if (!callId || String(callId) !== id) return;
+      if (String(callIdRef.current || '') !== id) return;
       const sock = callSocketRef.current;
       if (!sock) return;
 
@@ -766,7 +779,7 @@ const MessagesPage: React.FC = () => {
 
     const onAnswer = async (payload: any) => {
       const id = String(payload?.callId || '');
-      if (!id || id !== callId) return;
+      if (!id || id !== String(callIdRef.current || '')) return;
       const pc = pcRef.current;
       if (!pc) return;
       if (pc.currentRemoteDescription) return;
@@ -787,7 +800,7 @@ const MessagesPage: React.FC = () => {
 
     const onIce = async (payload: any) => {
       const id = String(payload?.callId || '');
-      if (!id || id !== callId) return;
+      if (!id || id !== String(callIdRef.current || '')) return;
       const pc = pcRef.current;
       if (!pc) return;
 
@@ -807,7 +820,7 @@ const MessagesPage: React.FC = () => {
 
     const onHangup = (payload: any) => {
       const id = String(payload?.callId || '');
-      if (!id || id !== callId) return;
+      if (!id || id !== String(callIdRef.current || '')) return;
       cleanupCall();
     };
 
