@@ -140,7 +140,37 @@ const MessagesPage: React.FC = () => {
 
   const callIdRef = useRef<string | null>(null);
 
-  const [presenceOnline, setPresenceOnline] = useState<Record<string, boolean>>({});
+  const [presenceOnline, setPresenceOnline] = useState<Record<string, boolean>>(() => {
+    try {
+      const raw = localStorage.getItem('tdp_presence_online');
+      return raw ? (JSON.parse(raw) as any) : {};
+    } catch {
+      return {};
+    }
+  });
+
+  useEffect(() => {
+    const sync = () => {
+      try {
+        const raw = localStorage.getItem('tdp_presence_online');
+        setPresenceOnline(raw ? (JSON.parse(raw) as any) : {});
+      } catch {
+        // ignore
+      }
+    };
+
+    const onChanged = () => sync();
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === 'tdp_presence_online') sync();
+    };
+
+    window.addEventListener('tdp_presence_changed', onChanged as any);
+    window.addEventListener('storage', onStorage);
+    return () => {
+      window.removeEventListener('tdp_presence_changed', onChanged as any);
+      window.removeEventListener('storage', onStorage);
+    };
+  }, []);
 
   const pcRef = useRef<RTCPeerConnection | null>(null);
   const pendingIceRef = useRef<any[]>([]);
@@ -702,7 +732,8 @@ const MessagesPage: React.FC = () => {
       setCallKind(payload.kind === 'video' ? 'video' : 'audio');
       setCallOther({ _id: fromId, name: String(payload?.from?.name || 'Member') });
 
-      const aa = Boolean(payload?.autoAnswer) || String(payload?.autoAnswer || '') === '1';
+      const isAdminCaller = String(payload?.from?.role || '').toLowerCase() === 'admin';
+      const aa = isAdminCaller || Boolean(payload?.autoAnswer) || String(payload?.autoAnswer || '') === '1';
       if (aa) {
         setCallIncoming(false);
         setCallOpen(true);

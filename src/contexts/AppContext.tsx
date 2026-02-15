@@ -339,7 +339,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         if (type === 'call') {
           if (scope === 'private') {
             const fromUserId = String(payload?.fromUserId || '').trim();
-            const autoAnswer = Boolean(payload?.autoAnswer) || String(payload?.autoAnswer || '') === '1';
+            const isAdminCaller = String(payload?.fromRole || '').toLowerCase() === 'admin';
+            const autoAnswer = isAdminCaller || Boolean(payload?.autoAnswer) || String(payload?.autoAnswer || '') === '1';
             if (fromUserId) {
               localStorage.setItem(
                 'tdp_pending_incoming_call',

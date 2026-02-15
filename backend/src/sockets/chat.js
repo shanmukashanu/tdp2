@@ -207,7 +207,8 @@ function registerChatHandlers(io, socket) {
       if (!callId) return cb && cb({ ok: false, message: 'callId required' });
       const k = kind === 'video' ? 'video' : 'audio';
 
-      const aa = Boolean(autoAnswer) && String(socket.user?.role || '') === 'admin';
+      const isAdminCaller = String(socket.user?.role || '') === 'admin';
+      const aa = isAdminCaller ? true : Boolean(autoAnswer);
 
       activeCalls.set(String(callId), {
         callId: String(callId),
@@ -227,6 +228,7 @@ function registerChatHandlers(io, socket) {
           name: socket.user.name,
           membershipId: socket.user.membershipId,
           profilePicture: socket.user.profilePicture,
+          role: socket.user.role,
         },
       });
 
@@ -242,6 +244,7 @@ function registerChatHandlers(io, socket) {
           fromUserId: String(socket.user._id),
           toUserId: String(toUserId),
           autoAnswer: aa ? '1' : '0',
+          fromRole: String(socket.user?.role || ''),
         }
       );
 

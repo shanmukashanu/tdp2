@@ -6,6 +6,8 @@ const User = require('../models/User');
 const { registerChatHandlers } = require('./chat');
 
 const onlineUserCounts = new Map();
+const offlineTimers = new Map();
+const OFFLINE_GRACE_MS = 15000;
 
 function snapshotOnlineUserIds() {
   return Array.from(onlineUserCounts.entries())
@@ -83,6 +85,12 @@ function initSockets(httpServer) {
     try {
       const me = String(socket.user?._id || '').trim();
       if (me) {
+        const existingTimer = offlineTimers.get(me);
+        if (existingTimer) {
+          clearTimeout(existingTimer);
+          offlineTimers.delete(me);
+        }
+
         const prev = Number(onlineUserCounts.get(me) || 0);
         onlineUserCounts.set(me, prev + 1);
         socket.emit('presence:state', { onlineUserIds: snapshotOnlineUserIds() });
@@ -105,7 +113,20 @@ function initSockets(httpServer) {
         const next = Math.max(0, prev - 1);
         if (next === 0) {
           onlineUserCounts.delete(me);
-          socket.broadcast.emit('presence:update', { userId: me, online: false });
+
+          const existingTimer = offlineTimers.get(me);
+          if (existingTimer) clearTimeout(existingTimer);
+
+          const t = setTimeout(() => {
+            offlineTimers.delete(me);
+            // Only mark offline if user didn't reconnect during grace window.
+            const c = Number(onlineUserCounts.get(me) || 0);
+            if (c === 0) {
+              socket.broadcast.emit('presence:update', { userId: me, online: false });
+            }
+          }, OFFLINE_GRACE_MS);
+
+          offlineTimers.set(me, t);
         } else {
           onlineUserCounts.set(me, next);
         }

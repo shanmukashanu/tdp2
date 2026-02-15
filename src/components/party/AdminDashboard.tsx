@@ -40,7 +40,14 @@ const AdminDashboard: React.FC = () => {
   const [adminChatMessages, setAdminChatMessages] = useState<any[]>([]);
   const [loadingAdminChat, setLoadingAdminChat] = useState(false);
 
-  const [presenceOnline, setPresenceOnline] = useState<Record<string, boolean>>({});
+  const [presenceOnline, setPresenceOnline] = React.useState<Record<string, boolean>>(() => {
+    try {
+      const raw = localStorage.getItem('tdp_presence_online');
+      return raw ? (JSON.parse(raw) as any) : {};
+    } catch {
+      return {};
+    }
+  });
 
   const [autoAnswerQuery, setAutoAnswerQuery] = useState('');
   const [autoAnswerUsers, setAutoAnswerUsers] = useState<any[]>([]);

@@ -62,6 +62,48 @@ const AppLayout: React.FC = () => {
       }
     };
 
+    const onPresenceState = (payload: any) => {
+      try {
+        const ids: string[] = Array.isArray(payload?.onlineUserIds)
+          ? payload.onlineUserIds.map((x: any) => String(x))
+          : [];
+        const next: Record<string, boolean> = {};
+        for (const id of ids) next[String(id)] = true;
+        localStorage.setItem('tdp_presence_online', JSON.stringify(next));
+        localStorage.setItem('tdp_presence_online_ts', String(Date.now()));
+        window.dispatchEvent(new Event('tdp_presence_changed'));
+      } catch {
+        // ignore
+      }
+    };
+
+    const onPresenceUpdate = (payload: any) => {
+      try {
+        const uid = String(payload?.userId || '').trim();
+        if (!uid) return;
+        const online = Boolean(payload?.online);
+        const raw = localStorage.getItem('tdp_presence_online');
+        const prev = raw ? JSON.parse(raw) : {};
+        const next = { ...(prev || {}), [uid]: online };
+        localStorage.setItem('tdp_presence_online', JSON.stringify(next));
+        localStorage.setItem('tdp_presence_online_ts', String(Date.now()));
+        window.dispatchEvent(new Event('tdp_presence_changed'));
+      } catch {
+        // ignore
+      }
+    };
+
+    const onVisibility = () => {
+      try {
+        if (document.visibilityState === 'visible') {
+          const sock = connectSocket();
+          sock.connect?.();
+        }
+      } catch {
+        // ignore
+      }
+    };
+
     const clearPendingIfMatches = (scope: 'private' | 'group', callId: string) => {
       try {
         const raw = localStorage.getItem('tdp_pending_incoming_call');
@@ -113,12 +155,18 @@ const AppLayout: React.FC = () => {
     s.on('groupcall:incoming', onIncomingGroup);
     s.on('call:hangup', onHangup);
     s.on('groupcall:hangup', onGroupHangup);
+    s.on('presence:state', onPresenceState);
+    s.on('presence:update', onPresenceUpdate);
+    document.addEventListener('visibilitychange', onVisibility);
 
     return () => {
       s.off('call:incoming', onIncoming);
       s.off('groupcall:incoming', onIncomingGroup);
       s.off('call:hangup', onHangup);
       s.off('groupcall:hangup', onGroupHangup);
+      s.off('presence:state', onPresenceState);
+      s.off('presence:update', onPresenceUpdate);
+      document.removeEventListener('visibilitychange', onVisibility);
     };
   }, [isAuthenticated, setCurrentPage]);
 
